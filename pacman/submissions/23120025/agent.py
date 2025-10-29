@@ -7,6 +7,7 @@ following this template.
 
 import sys
 from pathlib import Path
+from collections import deque
 
 # Add src to path to import the interface
 src_path = Path(__file__).parent.parent.parent / "src"
@@ -31,18 +32,15 @@ class PacmanAgent(BasePacmanAgent):
         Students can set up any data structures they need here.
         """
         super().__init__(**kwargs)
-        self.name = "Example Greedy Pacman"
+        self.name = "BFS Pacman"
     
     def step(self, map_state: np.ndarray, 
              my_position: tuple, 
              enemy_position: tuple,
              step_number: int) -> Move:
         """
-        Use BFS to find the shortest path to the ghost and take the
-        first step along that path. Falls back to a random valid
-        move if no path is found.
+        Using BFS (Breadth-First Search)
         """
-        # If already at the same position, stay
         if my_position == enemy_position:
             return Move.STAY
 
@@ -50,70 +48,46 @@ class PacmanAgent(BasePacmanAgent):
         if first_move is not None:
             return first_move
 
-        # Fallback: pick any valid move at random
+        # fallback: random valid move
         all_moves = [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]
         random.shuffle(all_moves)
         for move in all_moves:
-            delta_row, delta_col = move.value
-            new_pos = (my_position[0] + delta_row, my_position[1] + delta_col)
+            dr, dc = move.value
+            new_pos = (my_position[0] + dr, my_position[1] + dc)
             if self._is_valid_position(new_pos, map_state):
                 return move
-
         return Move.STAY
-
-    def _bfs_first_move(self, map_state: np.ndarray, start: tuple, goal: tuple):
-        """
-        Run BFS on the grid (map_state) from start to goal.
-        Returns the first Move to take along the shortest path,
-        or None if no path exists.
-        """
-        from collections import deque
-
-        # Quick bounds check
+    
+    def _bfs_first_move(self, map_state, start, goal):
         h, w = map_state.shape
 
         def valid(pos):
             r, c = pos
-            if r < 0 or r >= h or c < 0 or c >= w:
-                return False
-            return map_state[r, c] == 0
+            return 0 <= r < h and 0 <= c < w and map_state[r, c] == 0
 
-        # BFS structures
-        q = deque()
-        q.append(start)
+        q = deque([start])
         came_from = {start: None}
-
-        # Neighbors mapping to Moves (exclude STAY)
-        neighbors = [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]
+        moves = [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]
 
         while q:
-            current = q.popleft()
-            if current == goal:
+            cur = q.popleft()
+            if cur == goal:
                 break
-            for move in neighbors:
+            for move in moves:
                 dr, dc = move.value
-                nxt = (current[0] + dr, current[1] + dc)
-                if nxt in came_from:
-                    continue
-                if not valid(nxt):
-                    continue
-                came_from[nxt] = (current, move)
-                q.append(nxt)
+                nxt = (cur[0] + dr, cur[1] + dc)
+                if nxt not in came_from and valid(nxt):
+                    came_from[nxt] = (cur, move)
+                    q.append(nxt)
 
-        # If goal wasn't reached
         if goal not in came_from:
             return None
 
-        # Reconstruct path: walk back from goal to start to find first move
-        node = goal
-        last_move = None
-        while came_from[node] is not None:
-            prev, move = came_from[node]
-            last_move = move
-            node = prev
-
-        # last_move is the move that led from start to the next node
-        return last_move
+        # Reconstruct path to find first move
+        cur = goal
+        while came_from[cur][0] != start:
+            cur = came_from[cur][0]
+        return came_from[cur][1]
     
     def _is_valid_position(self, pos: tuple, map_state: np.ndarray) -> bool:
         """Check if a position is valid (not a wall and within bounds)."""
@@ -138,62 +112,87 @@ class GhostAgent(BaseGhostAgent):
         Students can set up any data structures they need here.
         """
         super().__init__(**kwargs)
-        self.name = "Example Evasive Ghost"
+        self.name = "BFS Escape Ghost"
     
     def step(self, map_state: np.ndarray, 
              my_position: tuple, 
              enemy_position: tuple,
              step_number: int) -> Move:
         """
-        Simple evasive strategy: move away from Pacman.
-        
-        Students should implement better search algorithms like:
-        - BFS to find furthest point
-        - A* to plan escape route
-        - Minimax for adversarial search
-        - etc.
+        Using BFS to find furthest point
         """
-        # Calculate direction away from Pacman
-        row_diff = my_position[0] - enemy_position[0]
-        col_diff = my_position[1] - enemy_position[1]
-        
-        # List of possible moves in order of preference
-        moves = []
-        
-        # Prioritize vertical movement away from Pacman
-        if row_diff > 0:
-            moves.append(Move.DOWN)
-        elif row_diff < 0:
-            moves.append(Move.UP)
-        
-        # Prioritize horizontal movement away from Pacman
-        if col_diff > 0:
-            moves.append(Move.RIGHT)
-        elif col_diff < 0:
-            moves.append(Move.LEFT)
-        
-        # Try each move in order
-        for move in moves:
-            delta_row, delta_col = move.value
-            new_pos = (my_position[0] + delta_row, my_position[1] + delta_col)
-            
-            # Check if move is valid
-            if self._is_valid_position(new_pos, map_state):
-                return move
-        
-        # If no preferred move is valid, try any valid move
-        all_moves = [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]
-        random.shuffle(all_moves)
-        
-        for move in all_moves:
-            delta_row, delta_col = move.value
-            new_pos = (my_position[0] + delta_row, my_position[1] + delta_col)
-            
-            if self._is_valid_position(new_pos, map_state):
-                return move
-        
-        # If no move is valid, stay
+        if my_position == enemy_position:
+            return Move.STAY
+
+        target = self._find_farthest_point(map_state, my_position, enemy_position)
+        if target is None:
+            return Move.STAY
+
+        first_move = self._bfs_first_move(map_state, my_position, target)
+        if first_move is not None:
+            return first_move
+
         return Move.STAY
+    
+    def _find_farthest_point(self, map_state, start, pacman_pos):
+        h, w = map_state.shape
+
+        def valid(pos):
+            r, c = pos
+            return 0 <= r < h and 0 <= c < w and map_state[r, c] == 0
+
+        q = deque([pacman_pos])
+        dist = {pacman_pos: 0}
+
+        while q:
+            cur = q.popleft()
+            for move in [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]:
+                dr, dc = move.value
+                nxt = (cur[0] + dr, cur[1] + dc)
+                if valid(nxt) and nxt not in dist:
+                    dist[nxt] = dist[cur] + 1
+                    q.append(nxt)
+
+        farthest = None
+        max_dist = -1
+        for pos, d in dist.items():
+            if valid(pos) and d > max_dist:
+                max_dist = d
+                farthest = pos
+        return farthest
+
+    def _bfs_first_move(self, map_state, start, goal):
+        h, w = map_state.shape
+
+        def valid(pos):
+            r, c = pos
+            return 0 <= r < h and 0 <= c < w and map_state[r, c] == 0
+
+        q = deque([start])
+        came_from = {start: None}
+        moves = [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]
+
+        while q:
+            cur = q.popleft()
+            if cur == goal:
+                break
+            for move in moves:
+                dr, dc = move.value
+                nxt = (cur[0] + dr, cur[1] + dc)
+                if nxt not in came_from and valid(nxt):
+                    came_from[nxt] = (cur, move)
+                    q.append(nxt)
+
+        if goal not in came_from:
+            return None
+
+        node = goal
+        last_move = None
+        while came_from[node] is not None:
+            prev, move = came_from[node]
+            last_move = move
+            node = prev
+        return last_move
     
     def _is_valid_position(self, pos: tuple, map_state: np.ndarray) -> bool:
         """Check if a position is valid (not a wall and within bounds)."""
@@ -204,4 +203,3 @@ class GhostAgent(BaseGhostAgent):
             return False
         
         return map_state[row, col] == 0
-
