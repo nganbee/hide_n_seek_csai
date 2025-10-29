@@ -45,33 +45,44 @@ class PacmanAgent(BasePacmanAgent):
     def astar(self, start, goal, map_state):
         from heapq import heappush, heappop
         
-        W = 1   # sử dụng Weightened A*
-        
+        W = 1.5   # using Weightened A*
+        count = 0       
+        g_costs = {start : 0}
+
         def heuristic(pos):
             # Manhattan distance
             return abs(pos[0] - goal[0]) + abs(pos[1] - goal[1])
         
-        prior_queue = [(0, start, [])]
+        h_cost_start = heuristic(start)
+        f_cost_start = g_costs[start] + (W * h_cost_start)
+        
+        # using count for avoiding heapq not comparing "path" -> cause error
+        prior_queue = [(f_cost_start, count, start, [])] 
+        count += 1
         visited = set()
         
         while prior_queue:
-            f_cost, current_pos, path = heappop(prior_queue)
+            f_cost, _,  current_pos, path = heappop(prior_queue)
             
             if current_pos == goal:
                 return path
             
             if current_pos in visited:
-                continue    # bỏ qua các nơi đã đi đến
+                continue    # pass the visited position
             
             visited.add(current_pos)
             
             for next_pos, move in self._get_neighbors(current_pos, map_state):
-                if next_pos not in visited:
-                    new_path = path + [move]
-                    g_cost = len(new_path)
+                new_g_cost = g_costs[current_pos] + 1
+                
+                if new_g_cost < g_costs.get(next_pos, float('inf')):
+                    g_costs[next_pos] = new_g_cost
+                    
                     h_cost = heuristic(next_pos)
-                    f_cost = g_cost + (W *h_cost)
-                    heappush(prior_queue, (f_cost, next_pos, new_path))
+                    new_f_cost = new_g_cost + (W * h_cost)
+                    new_path = path + [move]
+                    heappush(prior_queue, (new_f_cost, count, next_pos, new_path))
+                    count += 1
                     
         return [Move.STAY]
             
@@ -82,13 +93,14 @@ class PacmanAgent(BasePacmanAgent):
              enemy_position: tuple,
              step_number: int) -> Move:
         
+        # predict the pos of ghost
         ghost_velocity = (0,0)
         if self.ghost_prev_pos is not None:
             ghost_velocity = (enemy_position[0] - self.ghost_prev_pos[0],
                               enemy_position[1] - self.ghost_prev_pos[1])
             
         
-        PREDICTION_STEPS = 3
+        PREDICTION_STEPS = 5
         predicted_goal = enemy_position
         current_velocity = ghost_velocity
         
@@ -96,7 +108,7 @@ class PacmanAgent(BasePacmanAgent):
             next_pos = (predicted_goal[0] + current_velocity[0],
                         predicted_goal[1] + current_velocity[1])
             
-            if self._is_wall(next_pos, map_state):
+            if not self._is_valid_position(next_pos, map_state):
                 break
             
             else:
@@ -104,14 +116,14 @@ class PacmanAgent(BasePacmanAgent):
         
         
         path = self.astar(my_position, predicted_goal, map_state)
+        
+        # update the previous ghost position for the next step
+        self.ghost_prev_pos = enemy_position
+        
         if path:
             return path[0]
         
         return Move.STAY
-    
-    def _is_wall(self, pos, map_state):
-        x, y = pos
-        return map_state[x][y] == 1
     
     def _is_valid_position(self, pos, map_state):
         """Check if position is valid (not wall, within bounds)."""
