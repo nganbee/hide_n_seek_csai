@@ -40,9 +40,12 @@ class PacmanAgent(BasePacmanAgent):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.name = "A star Pacman"
+        self.ghost_prev_pos = None
     
     def astar(self, start, goal, map_state):
         from heapq import heappush, heappop
+        
+        W = 1   # sử dụng Weightened A*
         
         def heuristic(pos):
             # Manhattan distance
@@ -67,7 +70,7 @@ class PacmanAgent(BasePacmanAgent):
                     new_path = path + [move]
                     g_cost = len(new_path)
                     h_cost = heuristic(next_pos)
-                    f_cost = g_cost + h_cost
+                    f_cost = g_cost + (W *h_cost)
                     heappush(prior_queue, (f_cost, next_pos, new_path))
                     
         return [Move.STAY]
@@ -79,11 +82,36 @@ class PacmanAgent(BasePacmanAgent):
              enemy_position: tuple,
              step_number: int) -> Move:
         
-        path = self.astar(my_position, enemy_position, map_state)
+        ghost_velocity = (0,0)
+        if self.ghost_prev_pos is not None:
+            ghost_velocity = (enemy_position[0] - self.ghost_prev_pos[0],
+                              enemy_position[1] - self.ghost_prev_pos[1])
+            
+        
+        PREDICTION_STEPS = 3
+        predicted_goal = enemy_position
+        current_velocity = ghost_velocity
+        
+        for _ in range(PREDICTION_STEPS):
+            next_pos = (predicted_goal[0] + current_velocity[0],
+                        predicted_goal[1] + current_velocity[1])
+            
+            if self._is_wall(next_pos, map_state):
+                break
+            
+            else:
+                predicted_goal = next_pos
+        
+        
+        path = self.astar(my_position, predicted_goal, map_state)
         if path:
             return path[0]
         
         return Move.STAY
+    
+    def _is_wall(self, pos, map_state):
+        x, y = pos
+        return map_state[x][y] == 1
     
     def _is_valid_position(self, pos, map_state):
         """Check if position is valid (not wall, within bounds)."""
