@@ -224,10 +224,25 @@ class GhostAgent(BaseGhostAgent):
             # move pacman randomly
             pacman_moves = self._get_all_valid_moves(pacman_pos, map_state)
             if pacman_moves:
-                random_pacman_move = random.choice(pacman_moves)
-                pacman_pos = self._get_new_pos(pacman_pos, random_pacman_move)
+                best_pacman_move = self._get_move_towards(pacman_moves, pacman_pos, ghost_pos)
+                pacman_pos = self._get_new_pos(pacman_pos, best_pacman_move)
                 
         return max_depth
+    
+    def _get_move_towards(self, moves, current_pos, target_pos):
+        min_dist = float('inf')
+        best_move = Move.STAY
+        
+        for move in moves:
+            new_pos = self._get_new_pos(current_pos, move)
+            
+            dist = abs(new_pos[0] - target_pos[0]) + abs(new_pos[1] - target_pos[1])
+            
+            if dist < min_dist:
+                min_dist = dist
+                best_move = move
+                
+        return best_move
     
     def _get_new_pos(self, pos : tuple, move: Move):
         delta_row, delta_col = move.value
