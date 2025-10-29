@@ -27,6 +27,7 @@ from agent_interface import PacmanAgent as BasePacmanAgent
 from agent_interface import GhostAgent as BaseGhostAgent
 from environment import Move
 import numpy as np
+import random
 
 
 class PacmanAgent(BasePacmanAgent):
@@ -75,9 +76,9 @@ class PacmanAgent(BasePacmanAgent):
             for next_pos, move in self._get_neighbors(current_pos, map_state):
                 new_g_cost = g_costs[current_pos] + 1
                 
+                # if next_pos did not appear in g_cost -> return inf -> add new g_cost
                 if new_g_cost < g_costs.get(next_pos, float('inf')):
-                    g_costs[next_pos] = new_g_cost
-                    
+                    g_costs[next_pos] = new_g_cost  
                     h_cost = heuristic(next_pos)
                     new_f_cost = new_g_cost + (W * h_cost)
                     new_path = path + [move]
@@ -165,49 +166,83 @@ class GhostAgent(BaseGhostAgent):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # TODO: Initialize any data structures you need
-        pass
+    
+        self.sitmulation_per_move = 25
+        self.sitmulation_max_depth = 30
     
     def step(self, map_state: np.ndarray, 
              my_position: tuple, 
              enemy_position: tuple,
              step_number: int) -> Move:
-        """
-        Decide the next move.
         
-        Args:
-            map_state: 2D numpy array where 1=wall, 0=empty
-            my_position: Your current (row, col)
-            enemy_position: Pacman's current (row, col)
-            step_number: Current step number (starts at 1)
-            
-        Returns:
-            Move: One of Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT, Move.STAY
-        """
-        # TODO: Implement your search algorithm here
+        possible_moves = self._get_all_valid_moves(my_position, map_state)
         
-        # Example: Simple evasive approach (replace with your algorithm)
-        row_diff = my_position[0] - enemy_position[0]
-        col_diff = my_position[1] - enemy_position[1]
+        if not possible_moves:
+            Move.STAY
         
-        # Try to move away from Pacman
-        if abs(row_diff) > abs(col_diff):
-            move = Move.DOWN if row_diff > 0 else Move.UP
-        else:
-            move = Move.RIGHT if col_diff > 0 else Move.LEFT
+        move_scores = {move : 0 for move in possible_moves}
+       
+        for move in possible_moves:
+            new_ghost_pos = self._get_new_pos(my_position, move)
+                    
+            for _ in range(self.sitmulation_per_move):   
+                survival_time = self._run_sitmulation(
+                    map_state,
+                    new_ghost_pos,
+                    enemy_position,
+                    self.sitmulation_max_depth,
+                )
+                
+                move_scores[move] += survival_time
+                
+        best_move = max(move_scores, key = move_scores.get)
         
-        # Check if move is valid
-        if self._is_valid_move(my_position, move, map_state):
-            return move
-        
-        # If not valid, try other moves
-        for move in [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]:
-            if self._is_valid_move(my_position, move, map_state):
-                return move
-        
-        return Move.STAY
+        return best_move
     
-    # Helper methods (you can add more)
+    def _run_sitmulation(self, map_state, ghost_pos, pacman_pos, max_depth):
+        
+        survival_steps = 0
+        
+        for _ in range(max_depth):
+            
+            # if ghost get caught 
+            if ghost_pos == pacman_pos:
+                return survival_steps
+            
+            survival_steps += 1
+            
+            # move ghost randomly
+            ghost_moves = self._get_all_valid_moves(ghost_pos, map_state)
+            if ghost_moves:
+                random_ghost_move = random.choice(ghost_moves)
+                ghost_pos = self._get_new_pos(ghost_pos, random_ghost_move)
+            
+            # check position again
+            if ghost_pos == pacman_pos:
+                return survival_steps
+            
+            # move pacman randomly
+            pacman_moves = self._get_all_valid_moves(pacman_pos, map_state)
+            if pacman_moves:
+                random_pacman_move = random.choice(pacman_moves)
+                pacman_pos = self._get_new_pos(pacman_pos, random_pacman_move)
+                
+        return max_depth
+    
+    def _get_new_pos(self, pos : tuple, move: Move):
+        delta_row, delta_col = move.value
+        return (pos[0] + delta_row, pos[1] + delta_col)
+    
+    def _get_all_valid_moves(self, pos , map_state):
+        moves = []
+        for move in Move:
+            if move == Move.STAY:
+                moves.append(Move.STAY)
+                continue
+                
+            if self._is_valid_move(pos, move, map_state):
+                moves.append(move)
+        return moves
     
     def _is_valid_move(self, pos: tuple, move: Move, map_state: np.ndarray) -> bool:
         """Check if a move from pos is valid."""
