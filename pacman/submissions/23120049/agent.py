@@ -38,12 +38,8 @@ class PacmanAgent(BasePacmanAgent):
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # TODO: Initialize any data structures you need
-        # Examples:
-        # - self.path = []  # Store planned path
-        # - self.visited = set()  # Track visited positions
-        # - self.name = "Your Agent Name"
-        pass
+        self.current_path = []
+        self.last_enemy_pos = None
     
     def dfs(self, start, goal, map_state):
         """
@@ -73,12 +69,21 @@ class PacmanAgent(BasePacmanAgent):
         return [Move.STAY]
 
     def step(self, map_state, my_position, enemy_position, step_number):
-        path = self.dfs(my_position, enemy_position, map_state)
-        if path:
-            return path[0]  # Return first move in path
-        return Move.STAY
-    
-    # Helper methods (you can add more)
+        # Replan only when necessary
+        if (not self.current_path or 
+            self.last_enemy_pos is None or
+            self._manhattan_distance(enemy_position, self.last_enemy_pos) > 3):
+
+            # Recalculate full path using DFS
+            self.current_path = self.dfs(my_position, enemy_position, map_state)
+            self.last_enemy_pos = enemy_position
+
+        # Follow planned path
+        if self.current_path:
+            next_move = self.current_path.pop(0)
+            return next_move
+        
+        return Move.STAY   # Helper methods (you can add more)
     
     def _is_valid_move(self, pos: tuple, move: Move, map_state: np.ndarray) -> bool:
         """Check if a move from pos is valid."""
@@ -129,57 +134,41 @@ class GhostAgent(BaseGhostAgent):
         # TODO: Initialize any data structures you need
         pass
     
-    def minimax(self, state, depth, is_maximizing_player, map_state):
+    def minimax(self, my_pos, enemy_pos, depth, map_state):
         """
-        Minimax algorithm for Ghost (minimizing player).
-    
-        Args:
-            state: (my_pos, enemy_pos)
-            depth: Search depth remaining
-            is_maximizing_player: True if Pacman's turn, False if Ghost's turn
-            map_state: The maze map
-        
-        Returns:
-            (best_score, best_move)
+        Simplified minimax for simultaneous-move scenario.
+        Ghost tries to maximize distance, assuming Pacman moves toward it.
         """
-        my_pos, enemy_pos = state
-    
-        # Base case: reached depth limit or caught
         if depth == 0 or my_pos == enemy_pos:
-            # Return negative distance (Ghost wants to maximize distance)
             return -self._manhattan_distance(my_pos, enemy_pos), Move.STAY
-    
-        if is_maximizing_player:  # Pacman's turn (wants to minimize distance)
-            best_score = float('-inf')
-            best_move = Move.STAY
-        
-            for next_pos, move in self._get_neighbors(enemy_pos, map_state):
-                new_state = (my_pos, next_pos)
-                score, _ = self.minimax(new_state, depth-1, False, map_state)
-                if score > best_score:
-                    best_score = score
-                    best_move = move
-        
-            return best_score, best_move
-    
-        else:  # Ghost's turn (wants to maximize distance)
-            best_score = float('inf')
-            best_move = Move.STAY
-        
-            for next_pos, move in self._get_neighbors(my_pos, map_state):
-                new_state = (next_pos, enemy_pos)
-                score, _ = self.minimax(new_state, depth-1, True, map_state)
-                if score < best_score:
-                    best_score = score
-                    best_move = move
-        
-            return best_score, best_move
+
+        best_score = float('-inf')
+        best_move = Move.STAY
+
+        for next_pos, move in self._get_neighbors(my_pos, map_state):
+            # Predict Pacman's next move: move that minimizes distance to ghost
+            pacman_moves = self._get_neighbors(enemy_pos, map_state)
+            if pacman_moves:
+                pacman_next = min(
+                    pacman_moves,
+                    key=lambda nm: self._manhattan_distance(nm[0], next_pos)
+                )[0]
+            else:
+                pacman_next = enemy_pos
+
+            score, _ = self.minimax(next_pos, pacman_next, depth - 1, map_state)
+
+            if score > best_score:
+                best_score = score
+                best_move = move
+
+        return best_score, best_move
+
 
     def step(self, map_state, my_position, enemy_position, step_number):
         _, best_move = self.minimax(
-            (my_position, enemy_position),
-            depth=3,  # Search 3 moves ahead
-            is_maximizing_player=False,
+            my_position, enemy_position,
+            depth=3,
             map_state=map_state
         )
         return best_move
