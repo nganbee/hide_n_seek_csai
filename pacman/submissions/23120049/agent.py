@@ -41,32 +41,79 @@ class PacmanAgent(BasePacmanAgent):
         self.current_path = []
         self.last_enemy_pos = None
     
-    def dfs(self, start, goal, map_state):
-        """
-        Find a path from start to goal using Depth-First Search (DFS).
+    # def dfs(self, start, goal, map_state):
+    #     """
+    #     Find a path from start to goal using Depth-First Search (DFS).
     
+    #     Returns:
+    #         List of Move enums representing the path, or [Move.STAY] if no path.
+    #     """
+    #     # Stack stores (position, path_to_reach_it)
+    #     stack = [(start, [])]
+    #     visited = {start}
+    
+    #     while stack:
+    #         current_pos, path = stack.pop()
+        
+    #         # Found the goal!
+    #         if current_pos == goal:
+    #             return path
+        
+    #         # Explore neighbors (order affects path shape)
+    #         for next_pos, move in self._get_neighbors(current_pos, map_state):
+    #             if next_pos not in visited:
+    #                 visited.add(next_pos)
+    #                 stack.append((next_pos, path + [move]))
+    
+    #     # No path found
+    #     return [Move.STAY]
+    
+    def dfs_limited(self, start, goal, map_state, max_depth=10):
+        """
+        Depth-limited DFS that finds path getting closest to goal (within max_depth).
         Returns:
-            List of Move enums representing the path, or [Move.STAY] if no path.
+            List of moves representing the best path toward the goal.
         """
-        # Stack stores (position, path_to_reach_it)
-        stack = [(start, [])]
+        
+        """
+        1. Use a stack like normal DFS.
+        2. Keep (position, path, depth).
+        3. Track:
+            + best_path
+            + best_distance
+        4. Stop expanding deeper than MAX_DEPTH = 10.
+        5. Whenever a new position is closer to the Ghost → update best path.
+        """
+        stack = [(start, [], 0)]
         visited = {start}
-    
+        best_path = []
+        best_distance = self._manhattan_distance(start, goal)
+
         while stack:
-            current_pos, path = stack.pop()
-        
-            # Found the goal!
-            if current_pos == goal:
-                return path
-        
-            # Explore neighbors (order affects path shape)
-            for next_pos, move in self._get_neighbors(current_pos, map_state):
+            current_pos, path, depth = stack.pop()
+            current_distance = self._manhattan_distance(current_pos, goal)
+
+            # Update best path if closer to goal
+            if current_distance < best_distance:
+                best_distance = current_distance
+                best_path = path
+
+            # Stop at depth limit
+            if depth >= max_depth:
+                continue
+
+            # Explore neighbors
+            neighbors = self._get_neighbors(current_pos, map_state)
+            # Sort toward goal (helps DFS go more purposefully)
+            neighbors.sort(key=lambda x: self._manhattan_distance(x[0], goal))
+
+            for next_pos, move in neighbors:
                 if next_pos not in visited:
                     visited.add(next_pos)
-                    stack.append((next_pos, path + [move]))
-    
-        # No path found
-        return [Move.STAY]
+                    stack.append((next_pos, path + [move], depth + 1))
+
+        # If no path found, stay
+        return best_path if best_path else [Move.STAY]
 
     def step(self, map_state, my_position, enemy_position, step_number):
         # Replan only when necessary
@@ -75,7 +122,7 @@ class PacmanAgent(BasePacmanAgent):
             self._manhattan_distance(enemy_position, self.last_enemy_pos) > 3):
 
             # Recalculate full path using DFS
-            self.current_path = self.dfs(my_position, enemy_position, map_state)
+            self.current_path = self.dfs_limited(my_position, enemy_position, map_state)
             self.last_enemy_pos = enemy_position
 
         # Follow planned path
@@ -83,7 +130,9 @@ class PacmanAgent(BasePacmanAgent):
             next_move = self.current_path.pop(0)
             return next_move
         
-        return Move.STAY   # Helper methods (you can add more)
+        return Move.STAY  
+
+# Helper methods (you can add more)
     
     def _is_valid_move(self, pos: tuple, move: Move, map_state: np.ndarray) -> bool:
         """Check if a move from pos is valid."""
