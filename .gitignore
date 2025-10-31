@@ -1,0 +1,15 @@
+# Visual Studio temporary files
+.vs/
+*.user
+*.suo
+*.cache
+
+# Build results
+bin/
+obj/
+Debug/
+Release/
+
+# Python junk (if you have any Python parts)
+__pycache__/
+*.pyc
