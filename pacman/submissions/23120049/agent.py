@@ -28,62 +28,161 @@ from environment import Move
 import numpy as np
 
 
+# class PacmanAgent(BasePacmanAgent):
+#     """
+#     Pacman (Seeker) Agent - Goal: Catch the Ghost
+    
+#     Implement your search algorithm to find and catch the ghost.
+#     Suggested algorithms: BFS, DFS, A*, Greedy Best-First
+#     """
+    
+#     def __init__(self, **kwargs):
+#         super().__init__(**kwargs)
+#         self.current_path = []
+#         self.last_enemy_pos = None
+    
+#     def dfs_limited(self, start, goal, map_state, max_depth=10):
+#         """
+#         Depth-limited DFS that finds path getting closest to goal (within max_depth).
+#         Returns:
+#             List of moves representing the best path toward the goal.
+#         """
+        
+#         """
+#         1. Use a stack like normal DFS.
+#         2. Keep (position, path, depth).
+#         3. Track:
+#             + best_path
+#             + best_distance
+#         4. Stop expanding deeper than MAX_DEPTH = 10.
+#         5. Whenever a new position is closer to the Ghost → update best path.
+#         """
+#         stack = [(start, [], 0)]
+#         visited = {start}
+#         best_path = []
+#         best_distance = self._manhattan_distance(start, goal)
+
+#         while stack:
+#             current_pos, path, depth = stack.pop()
+#             current_distance = self._manhattan_distance(current_pos, goal)
+
+#             # Update best path if closer to goal
+#             if current_distance < best_distance:
+#                 best_distance = current_distance
+#                 best_path = path
+
+#             # Stop at depth limit
+#             if depth >= max_depth:
+#                 continue
+
+#             # Explore neighbors
+#             neighbors = self._get_neighbors(current_pos, map_state)
+#             # Sort toward goal (helps DFS go more purposefully)
+#             neighbors.sort(key=lambda x: self._manhattan_distance(x[0], goal))
+
+#             for next_pos, move in neighbors:
+#                 if next_pos not in visited:
+#                     visited.add(next_pos)
+#                     stack.append((next_pos, path + [move], depth + 1))
+
+#         # If no path found, stay
+#         return best_path if best_path else [Move.STAY]
+
+#     def step(self, map_state, my_position, enemy_position, step_number):
+#         # Replan only when necessary
+#         if (not self.current_path or 
+#             self.last_enemy_pos is None or
+#             self._manhattan_distance(enemy_position, self.last_enemy_pos) > 3):
+
+#             # Recalculate full path using DFS
+#             self.current_path = self.dfs_limited(my_position, enemy_position, map_state)
+#             self.last_enemy_pos = enemy_position
+
+#         # Follow planned path
+#         if self.current_path:
+#             next_move = self.current_path.pop(0)
+#             return next_move
+        
+#         return Move.STAY  
+
+# class PacmanAgent(BasePacmanAgent):
+#     def __init__(self, **kwargs):
+#         super().__init__(**kwargs)
+#         self.current_path = []
+#         self.last_enemy_pos = None
+#         self.last_distance = None
+#         self.last_stall_step = None
+
+#     def dfs_limited(self, start, goal, map_state, max_depth=10):
+#         stack = [(start, [], 0)]
+#         visited = {start}
+#         best_path = []
+#         best_distance = self._manhattan_distance(start, goal)
+
+#         while stack:
+#             current_pos, path, depth = stack.pop()
+#             current_distance = self._manhattan_distance(current_pos, goal)
+
+#             if current_distance < best_distance:
+#                 best_distance = current_distance
+#                 best_path = path
+
+#             if depth >= max_depth:
+#                 continue
+
+#             neighbors = self._get_neighbors(current_pos, map_state)
+#             neighbors.sort(key=lambda x: self._manhattan_distance(x[0], goal))
+
+#             for next_pos, move in neighbors:
+#                 if next_pos not in visited:
+#                     visited.add(next_pos)
+#                     stack.append((next_pos, path + [move], depth + 1))
+
+#         return best_path if best_path else [Move.STAY]
+
+#     def step(self, map_state, my_position, enemy_position, step_number):
+#         dist = self._manhattan_distance(my_position, enemy_position)
+
+#         # --- Adjacent stall logic ---
+#         if dist == 1:
+#             # If distance hasn't improved recently → stall for a moment
+#             if (self.last_distance is not None 
+#                 and dist >= self.last_distance
+#                 and self.last_stall_step != step_number):
+#                 self.last_stall_step = step_number
+#                 self.current_path = []  # reset for replan
+#                 self.last_distance = dist
+#                 return Move.STAY
+
+#         # --- Normal planning ---
+#         if (not self.current_path or
+#             self.last_enemy_pos is None or
+#             self._manhattan_distance(enemy_position, self.last_enemy_pos) > 3):
+
+#             self.current_path = self.dfs_limited(my_position, enemy_position, map_state)
+#             self.last_enemy_pos = enemy_position
+
+#         if self.current_path:
+#             move = self.current_path.pop(0)
+#         else:
+#             move = Move.STAY
+
+#         # Update tracking
+#         self.last_distance = dist
+#         return move
+
+import heapq
+
 class PacmanAgent(BasePacmanAgent):
-    """
-    Pacman (Seeker) Agent - Goal: Catch the Ghost
-    
-    Implement your search algorithm to find and catch the ghost.
-    Suggested algorithms: BFS, DFS, A*, Greedy Best-First
-    """
-    
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.current_path = []
         self.last_enemy_pos = None
-    
-    # def dfs(self, start, goal, map_state):
-    #     """
-    #     Find a path from start to goal using Depth-First Search (DFS).
-    
-    #     Returns:
-    #         List of Move enums representing the path, or [Move.STAY] if no path.
-    #     """
-    #     # Stack stores (position, path_to_reach_it)
-    #     stack = [(start, [])]
-    #     visited = {start}
-    
-    #     while stack:
-    #         current_pos, path = stack.pop()
-        
-    #         # Found the goal!
-    #         if current_pos == goal:
-    #             return path
-        
-    #         # Explore neighbors (order affects path shape)
-    #         for next_pos, move in self._get_neighbors(current_pos, map_state):
-    #             if next_pos not in visited:
-    #                 visited.add(next_pos)
-    #                 stack.append((next_pos, path + [move]))
-    
-    #     # No path found
-    #     return [Move.STAY]
-    
+        self.last_distance = None
+        self.last_stall_step = None
+        self.critical_distance = 5  # threshold for A* switch
+
     def dfs_limited(self, start, goal, map_state, max_depth=10):
-        """
-        Depth-limited DFS that finds path getting closest to goal (within max_depth).
-        Returns:
-            List of moves representing the best path toward the goal.
-        """
-        
-        """
-        1. Use a stack like normal DFS.
-        2. Keep (position, path, depth).
-        3. Track:
-            + best_path
-            + best_distance
-        4. Stop expanding deeper than MAX_DEPTH = 10.
-        5. Whenever a new position is closer to the Ghost → update best path.
-        """
         stack = [(start, [], 0)]
         visited = {start}
         best_path = []
@@ -93,18 +192,14 @@ class PacmanAgent(BasePacmanAgent):
             current_pos, path, depth = stack.pop()
             current_distance = self._manhattan_distance(current_pos, goal)
 
-            # Update best path if closer to goal
             if current_distance < best_distance:
                 best_distance = current_distance
                 best_path = path
 
-            # Stop at depth limit
             if depth >= max_depth:
                 continue
 
-            # Explore neighbors
             neighbors = self._get_neighbors(current_pos, map_state)
-            # Sort toward goal (helps DFS go more purposefully)
             neighbors.sort(key=lambda x: self._manhattan_distance(x[0], goal))
 
             for next_pos, move in neighbors:
@@ -112,25 +207,66 @@ class PacmanAgent(BasePacmanAgent):
                     visited.add(next_pos)
                     stack.append((next_pos, path + [move], depth + 1))
 
-        # If no path found, stay
         return best_path if best_path else [Move.STAY]
 
+    def astar_path(self, start, goal, map_state):
+        """A* Search for shortest path using Manhattan heuristic."""
+        open_heap = []
+        heapq.heappush(open_heap, (0, start, []))
+        g_score = {start: 0}
+        visited = set()
+
+        while open_heap:
+            _, current, path = heapq.heappop(open_heap)
+            if current == goal:
+                return path
+
+            if current in visited:
+                continue
+            visited.add(current)
+
+            for next_pos, move in self._get_neighbors(current, map_state):
+                tentative_g = g_score[current] + 1
+                if tentative_g < g_score.get(next_pos, float('inf')):
+                    g_score[next_pos] = tentative_g
+                    f_score = tentative_g + self._manhattan_distance(next_pos, goal)
+                    heapq.heappush(open_heap, (f_score, next_pos, path + [move]))
+
+        return [Move.STAY]
+
     def step(self, map_state, my_position, enemy_position, step_number):
-        # Replan only when necessary
-        if (not self.current_path or 
+        dist = self._manhattan_distance(my_position, enemy_position)
+
+        # --- Adjacent stall logic ---
+        if dist == 1:
+            if (self.last_distance is not None 
+                and dist >= self.last_distance
+                and self.last_stall_step != step_number):
+                self.last_stall_step = step_number
+                self.current_path = []
+                self.last_distance = dist
+                return Move.STAY
+
+        # --- Algorithm switching logic ---
+        if (not self.current_path or
             self.last_enemy_pos is None or
             self._manhattan_distance(enemy_position, self.last_enemy_pos) > 3):
 
-            # Recalculate full path using DFS
-            self.current_path = self.dfs_limited(my_position, enemy_position, map_state)
+            if dist <= self.critical_distance:
+                # Close range: A* for optimal capture
+                self.current_path = self.astar_path(my_position, enemy_position, map_state)
+            else:
+                # Far range: limited DFS for exploratory pursuit
+                self.current_path = self.dfs_limited(my_position, enemy_position, map_state)
+
             self.last_enemy_pos = enemy_position
 
-        # Follow planned path
-        if self.current_path:
-            next_move = self.current_path.pop(0)
-            return next_move
-        
-        return Move.STAY  
+        # --- Move execution ---
+        move = self.current_path.pop(0) if self.current_path else Move.STAY
+        self.last_distance = dist
+        return move
+
+
 
 # Helper methods (you can add more)
     
