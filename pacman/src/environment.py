@@ -192,6 +192,8 @@ class Environment:
         # Pacman catches Ghost
         if self.pacman_pos == self.ghost_pos:
             return True, 'pacman_wins', self.get_state()
+        elif self.get_distance(self.pacman_pos, self.ghost_pos) <= 1:
+            return True, 'pacman_wins', self.get_state()
         
         # Ghost wins if Pacman fails to catch within the allotted steps
         if self.current_step >= self.max_steps:
