@@ -203,7 +203,7 @@ class GhostAgent(BaseGhostAgent):
         survival_steps = 0 
         for _ in range(max_depth):        
             # if ghost get caught 
-            if ghost_pos == pacman_pos:
+            if self._get_mahattan_distance(ghost_pos, pacman_pos):
                 return survival_steps
             
             survival_steps += 1
@@ -211,11 +211,11 @@ class GhostAgent(BaseGhostAgent):
             # move ghost randomly
             ghost_moves = self._get_all_valid_moves(ghost_pos, map_state)
             if ghost_moves:
-                random_ghost_move = random.choice(ghost_moves)
-                ghost_pos = self._get_new_pos(ghost_pos, random_ghost_move)
+                best_ghost_move = self._get_move_away(ghost_moves, ghost_pos, pacman_pos)
+                ghost_pos = self._get_new_pos(ghost_pos, best_ghost_move)
             
             # check position again
-            if ghost_pos == pacman_pos:
+            if self._get_mahattan_distance(ghost_pos, pacman_pos):
                 return survival_steps
             
             # move pacman randomly
@@ -224,7 +224,22 @@ class GhostAgent(BaseGhostAgent):
                 best_pacman_move = self._get_move_towards(pacman_moves, pacman_pos, ghost_pos)
                 pacman_pos = self._get_new_pos(pacman_pos, best_pacman_move)
                 
-        return max_depth
+        final_pos = self._evaluate_position(ghost_pos, pacman_pos, map_state)
+        return max_depth + final_pos
+    
+    def _get_move_away(self, moves, current_pos, target_pos):
+        max_dist = -1.0
+        best_move = Move.STAY
+        
+        for move in moves:
+            new_pos = self._get_new_pos(current_pos, move)
+            dist = self._get_mahattan_distance(new_pos, target_pos)
+            
+            if dist > max_dist:
+                max_dist = dist
+                best_move = move
+                
+        return best_move
     
     def _get_move_towards(self, moves, current_pos, target_pos):
         min_dist = float('inf')
@@ -233,13 +248,27 @@ class GhostAgent(BaseGhostAgent):
         for move in moves:
             new_pos = self._get_new_pos(current_pos, move)
             
-            dist = abs(new_pos[0] - target_pos[0]) + abs(new_pos[1] - target_pos[1])
+            dist = self._get_mahattan_distance(new_pos, target_pos)
             
             if dist < min_dist:
                 min_dist = dist
                 best_move = move
                 
         return best_move
+    
+    def _evaluate_position(self, ghost_pos, pacman_pos, map_state):
+        escape_moves = self._get_all_valid_moves(ghost_pos, map_state)
+        num_escapes = len(escape_moves)
+        
+        if num_escapes <= 1:
+            return -50
+        elif num_escapes == 2:
+            return 0
+        else:
+            return 20
+    
+    def _get_mahattan_distance(self, pos1, pos2):
+        return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
     
     def _get_new_pos(self, pos : tuple, move: Move):
         delta_row, delta_col = move.value
