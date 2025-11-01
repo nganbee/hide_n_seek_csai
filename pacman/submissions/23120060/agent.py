@@ -63,7 +63,7 @@ class PacmanAgent(BasePacmanAgent):
         visited = set()
         
         while prior_queue:
-            f_cost, _,  current_pos, path = heappop(prior_queue)
+            _, _,  current_pos, path = heappop(prior_queue)
             
             if current_pos == goal:
                 return path
@@ -88,7 +88,6 @@ class PacmanAgent(BasePacmanAgent):
         return [Move.STAY]
             
             
-    
     def step(self, map_state: np.ndarray, 
              my_position: tuple, 
              enemy_position: tuple,
@@ -201,10 +200,8 @@ class GhostAgent(BaseGhostAgent):
     
     def _run_sitmulation(self, map_state, ghost_pos, pacman_pos, max_depth):
         
-        survival_steps = 0
-        
-        for _ in range(max_depth):
-            
+        survival_steps = 0 
+        for _ in range(max_depth):        
             # if ghost get caught 
             if ghost_pos == pacman_pos:
                 return survival_steps
