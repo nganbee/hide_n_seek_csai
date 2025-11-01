@@ -1,0 +1,4 @@
+Pacman: 23120049 || Ghost: 23120060 || Pacman rate: 24.0 || Ghost rate: 76.0
+Pacman: 23120049 || Ghost: potential_field || Pacman rate: 12.0 || Ghost rate: 88.0
+Pacman: 23120060 || Ghost: 23120060 || Pacman rate: 48.0 || Ghost rate: 52.0
+Pacman: 23120060 || Ghost: potential_field || Pacman rate: 0.0 || Ghost rate: 100.0
