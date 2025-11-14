@@ -49,7 +49,10 @@ class Arena:
                  max_steps: int = 200,
                  visualize: bool = True,
                  delay: float = 0.1,
-                 step_timeout: Optional[float] = 3.0):
+                 step_timeout: Optional[float] = 3.0,
+                 deterministic_starts: bool = True,
+                 capture_distance_threshold: int = 1,
+                 pacman_speed: int = 1):
         """
         Initialize the arena.
         
@@ -61,21 +64,32 @@ class Arena:
             visualize: Whether to display the game
             delay: Delay between steps in seconds (for visualization)
             step_timeout: Max seconds allowed per agent step (>0 to enable)
+            deterministic_starts: Use fixed classic start positions when available
+            capture_distance_threshold: Manhattan distance under which Pacman captures
+            pacman_speed: Maximum straight-path speed multiplier for Pacman
         """
         self.pacman_id = pacman_id
         self.ghost_id = ghost_id
         self.submissions_dir = submissions_dir
         self.max_steps = max_steps
         self.visualize = visualize
-        self.delay = delay
+        self.delay = delay if visualize else 0.0
         self.step_timeout = step_timeout if step_timeout and step_timeout > 0 else None
+        self.deterministic_starts = deterministic_starts
+        self.capture_distance_threshold = max(1, int(capture_distance_threshold))
+        self.pacman_speed = max(1, int(pacman_speed))
         self._timeout_supported = hasattr(signal, "SIGALRM")
         if self.step_timeout and not self._timeout_supported:
             print("WARNING: Step timeout requested but SIGALRM is unavailable on this platform. Timeout disabled.")
             self.step_timeout = None
         
         # Initialize components
-        self.env = Environment(max_steps=max_steps)
+        self.env = Environment(
+            max_steps=max_steps,
+            deterministic_starts=self.deterministic_starts,
+            capture_distance_threshold=self.capture_distance_threshold,
+            pacman_speed=self.pacman_speed
+        )
         self.loader = AgentLoader(submissions_dir=submissions_dir)
         self.visualizer = GameVisualizer() if visualize else None
         
@@ -99,7 +113,11 @@ class Arena:
         
         try:
             print(f"Loading Pacman agent from student: {self.pacman_id}")
-            self.pacman_agent = self.loader.load_agent(self.pacman_id, 'pacman')
+            self.pacman_agent = self.loader.load_agent(
+                self.pacman_id,
+                'pacman',
+                init_kwargs={'pacman_speed': self.pacman_speed}
+            )
             print(f"✓ Pacman agent loaded successfully\n")
         except AgentLoadError as e:
             print(f"✗ Failed to load Pacman agent: {e}\n")
@@ -144,12 +162,17 @@ class Arena:
             
             # Get moves from both agents
             try:
-                pacman_move = self._run_agent_step(
+                pacman_action = self._run_agent_step(
                     lambda: self.pacman_agent.step(
                         map_state, pacman_pos, ghost_pos, step
                     )
                 )
-                self.loader.validate_agent_move(pacman_move, 'pacman', self.pacman_id)
+                pacman_action = self.loader.validate_agent_move(
+                    pacman_action,
+                    'pacman',
+                    self.pacman_id,
+                    self.pacman_speed
+                )
             except AgentTimeoutError:
                 print(f"\n✗ Pacman agent timed out at step {step} after {self.step_timeout}s")
                 print("Ghost wins by default!")
@@ -169,7 +192,11 @@ class Arena:
                         map_state, ghost_pos, pacman_pos, step
                     )
                 )
-                self.loader.validate_agent_move(ghost_move, 'ghost', self.ghost_id)
+                ghost_move = self.loader.validate_agent_move(
+                    ghost_move,
+                    'ghost',
+                    self.ghost_id
+                )
             except AgentTimeoutError:
                 print(f"\n✗ Ghost agent timed out at step {step} after {self.step_timeout}s")
                 print(f"Pacman wins by default!")
@@ -184,11 +211,11 @@ class Arena:
                 break
             
             # Record moves
-            self.stats['pacman_moves'].append(pacman_move)
+            self.stats['pacman_moves'].append(pacman_action)
             self.stats['ghost_moves'].append(ghost_move)
             
             # Execute step in environment
-            game_over, result, new_state = self.env.step(pacman_move, ghost_move)
+            game_over, result, new_state = self.env.step(pacman_action, ghost_move)
             map_state, pacman_pos, ghost_pos = new_state
             
             # Record position history
@@ -199,7 +226,7 @@ class Arena:
                 time.sleep(self.delay)
                 self.visualizer.display(
                     self.env, step, self.pacman_id, self.ghost_id,
-                    pacman_move, ghost_move, result if game_over else None
+                    pacman_action, ghost_move, result if game_over else None
                 )
         
         self.stats['total_steps'] = step
@@ -305,8 +332,29 @@ Examples:
     parser.add_argument(
         '--step-timeout',
         type=float,
-        default=3.0,
+        default=1.0,
         help='Maximum seconds allowed per agent step (<=0 disables timeout)'
+    )
+
+    parser.add_argument(
+        '--start-mode',
+        choices=['deterministic', 'stochastic'],
+        default='deterministic',
+        help='Select deterministic classic starts or stochastic random starts'
+    )
+
+    parser.add_argument(
+        '--capture-distance',
+        type=int,
+        default=1,
+        help='Pacman captures Ghost when Manhattan distance is below this value'
+    )
+
+    parser.add_argument(
+        '--pacman-speed',
+        type=int,
+        default=1,
+        help='Maximum tiles Pacman can advance in the same direction when on a straight path'
     )
     
     args = parser.parse_args()
@@ -319,13 +367,15 @@ Examples:
         max_steps=args.max_steps,
         visualize=not args.no_viz,
         delay=args.delay,
-        step_timeout=args.step_timeout
+        step_timeout=args.step_timeout,
+        deterministic_starts=(args.start_mode == 'deterministic'),
+        capture_distance_threshold=args.capture_distance,
+        pacman_speed=args.pacman_speed
     )
     
     arena.load_agents()
     result, stats = arena.run_game()
     
-    print(result)
     return 0 if result in ['pacman_wins', 'ghost_wins', 'draw'] else 1
 
 

@@ -3,7 +3,7 @@ Visualization module for displaying the game state.
 """
 
 import os
-from typing import Optional
+from typing import Optional, Union
 from environment import Environment, Move
 
 
@@ -25,7 +25,7 @@ class GameVisualizer:
                 step: int,
                 pacman_id: str,
                 ghost_id: str,
-                pacman_move: Optional[Move] = None,
+                pacman_move: Optional[Union[Move, tuple]] = None,
                 ghost_move: Optional[Move] = None,
                 result: Optional[str] = None):
         """
@@ -50,12 +50,12 @@ class GameVisualizer:
         # Player info
         print(f"🔵 Pacman (P): {pacman_id:20} ", end="")
         if pacman_move:
-            print(f"Last move: {pacman_move.name:>5}", end="")
+            print(f"Last move: {self._format_move(pacman_move)}", end="")
         print()
         
         print(f"🔴 Ghost  (G): {ghost_id:20} ", end="")
         if ghost_move:
-            print(f"Last move: {ghost_move.name:>5}", end="")
+            print(f"Last move: {self._format_move(ghost_move)}", end="")
         print()
         
         print(f"\nStep: {step}/{env.max_steps}")
@@ -103,3 +103,15 @@ class GameVisualizer:
         print(f"ERROR in {agent_type.upper()} agent ({student_id}):")
         print(f"{error_msg}")
         print(f"{'!'*60}\n")
+
+    def _format_move(self, move) -> str:
+        if isinstance(move, tuple) and len(move) == 2:
+            base_move, steps = move
+            label = base_move.name if isinstance(base_move, Move) else str(base_move)
+            steps = int(steps)
+            if steps > 1:
+                return f"{label} x{steps}"
+            return label
+        if isinstance(move, Move):
+            return move.name
+        return str(move)

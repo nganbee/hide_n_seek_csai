@@ -39,7 +39,10 @@ class AgentInterface(ABC):
             step_number: Current step number in the game
             
         Returns:
-            Move enum value (UP, DOWN, LEFT, RIGHT, or STAY)
+            For Pacman agents: Either a Move enum value or a tuple of
+            (Move, steps) where steps is an integer between 1 and the
+            configured maximum straight-line speed.
+            For Ghost agents: Move enum value (UP, DOWN, LEFT, RIGHT, or STAY)
         """
         pass
 

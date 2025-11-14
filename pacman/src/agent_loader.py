@@ -5,8 +5,11 @@ Module for loading student agents dynamically.
 import sys
 import importlib.util
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple, TYPE_CHECKING
 from agent_interface import PacmanAgent, GhostAgent
+
+if TYPE_CHECKING:
+    from environment import Move
 
 
 class AgentLoadError(Exception):
@@ -30,7 +33,7 @@ class AgentLoader:
         if not self.submissions_dir.exists():
             self.submissions_dir.mkdir(parents=True)
     
-    def load_agent(self, student_id: str, agent_type: str) -> object:
+    def load_agent(self, student_id: str, agent_type: str, init_kwargs: Optional[dict] = None) -> object:
         """
         Load a student's agent.
         
@@ -102,7 +105,8 @@ class AgentLoader:
         
         # Instantiate the agent
         try:
-            agent_instance = agent_class()
+            kwargs = init_kwargs or {}
+            agent_instance = agent_class(**kwargs)
         except Exception as e:
             raise AgentLoadError(
                 f"Failed to instantiate agent for student {student_id}: {str(e)}"
@@ -110,7 +114,7 @@ class AgentLoader:
         
         return agent_instance
     
-    def validate_agent_move(self, move, agent_type: str, student_id: str):
+    def validate_agent_move(self, move, agent_type: str, student_id: str, pacman_speed: Optional[int] = None):
         """
         Validate that an agent's move is legal.
         
@@ -124,8 +128,50 @@ class AgentLoader:
         """
         from environment import Move
         
+        if agent_type.lower() == 'pacman':
+            return self._validate_pacman_action(move, student_id, pacman_speed)
+
         if not isinstance(move, Move):
             raise AgentLoadError(
                 f"Agent {student_id} ({agent_type}) returned invalid move type: {type(move)}. "
                 f"Must return a Move enum value."
             )
+        return move
+
+    def _validate_pacman_action(self, action, student_id: str, pacman_speed: Optional[int]) -> Tuple['Move', int]:
+        from environment import Move
+
+        if isinstance(action, Move):
+            move = action
+            steps = 1
+        elif isinstance(action, tuple) and len(action) == 2:
+            move, steps = action
+        else:
+            raise AgentLoadError(
+                f"Agent {student_id} (pacman) must return a Move or a (Move, steps) tuple. "
+                f"Got {action!r}."
+            )
+
+        if not isinstance(move, Move):
+            raise AgentLoadError(
+                f"Agent {student_id} (pacman) returned invalid move component: {move!r}."
+            )
+
+        try:
+            steps = int(steps)
+        except (TypeError, ValueError):
+            raise AgentLoadError(
+                f"Agent {student_id} (pacman) provided non-integer steps value: {steps!r}."
+            )
+
+        if steps < 1:
+            raise AgentLoadError(
+                f"Agent {student_id} (pacman) must request at least 1 step."
+            )
+
+        if pacman_speed is not None and steps > pacman_speed:
+            raise AgentLoadError(
+                f"Agent {student_id} (pacman) requested {steps} steps which exceeds the maximum speed {pacman_speed}."
+            )
+
+        return move, steps
