@@ -30,7 +30,14 @@ class Environment:
     Game environment that manages the map and agent positions.
     """
     
-    def __init__(self, map_layout: Optional[np.ndarray] = None, max_steps: int = 200):
+    def __init__(
+        self,
+        map_layout: Optional[np.ndarray] = None,
+        max_steps: int = 200,
+        deterministic_starts: bool = True,
+        capture_distance_threshold: int = 1,
+        pacman_speed: int = 1
+    ):
         """
         Initialize the environment.
         
@@ -38,6 +45,12 @@ class Environment:
             map_layout: 2D numpy array where 1 = wall, 0 = empty
             max_steps: Maximum number of steps before game ends in a draw
         """
+        self.default_pacman_start = None
+        self.default_ghost_start = None
+        self.deterministic_starts = deterministic_starts
+        self.capture_distance_threshold = max(1, int(capture_distance_threshold))
+        self.pacman_speed = max(1, int(pacman_speed))
+
         if map_layout is None:
             # Default classic Pacman-style map
             self.map = self._create_default_map()
@@ -68,7 +81,7 @@ class Environment:
             "#####.### # ###.#####",
             "    #.#       #.#    ",
             "#####.# ##-## #.#####",
-            "     .  #   #  .     ",
+            "     .  . G .  .     ",
             "#####.# ##### #.#####",
             "    #.#       #.#    ",
             "#####.# ##### #.#####",
@@ -82,6 +95,8 @@ class Environment:
             "#####################"
         ]
         
+        pacman_start = None
+        ghost_start = None
         map_array = np.zeros((len(layout), len(layout[0])), dtype=int)
         for i, row in enumerate(layout):
             for j, cell in enumerate(row):
@@ -89,7 +104,15 @@ class Environment:
                     map_array[i, j] = 1
                 elif cell == '-':
                     map_array[i, j] = 1
-        
+                else:
+                    map_array[i, j] = 0
+                    if cell == 'P':
+                        pacman_start = (i, j)
+                    elif cell == 'G':
+                        ghost_start = (i, j)
+
+        self.default_pacman_start = pacman_start
+        self.default_ghost_start = ghost_start
         return map_array
     
     def reset(self) -> Tuple[np.ndarray, Tuple[int, int], Tuple[int, int]]:
@@ -100,25 +123,31 @@ class Environment:
             Tuple of (map, pacman_position, ghost_position)
         """
         self.current_step = 0
-        
-        # Find valid starting positions (empty cells)
-        empty_cells = np.argwhere(self.map == 0)
-        
-        # Set Pacman at bottom area
-        bottom_cells = empty_cells[empty_cells[:, 0] > self.height * 0.6]
-        if len(bottom_cells) > 0:
-            pacman_idx = np.random.choice(len(bottom_cells))
-            self.pacman_pos = tuple(bottom_cells[pacman_idx])
+        empty_cells = None
+        if (not self.deterministic_starts or
+                self.default_pacman_start is None or
+                self.default_ghost_start is None):
+            empty_cells = np.argwhere(self.map == 0)
+
+        if self.deterministic_starts and self.default_pacman_start is not None:
+            self.pacman_pos = tuple(int(v) for v in self.default_pacman_start)
         else:
-            self.pacman_pos = tuple(empty_cells[0])
-        
-        # Set Ghost at top area
-        top_cells = empty_cells[empty_cells[:, 0] < self.height * 0.4]
-        if len(top_cells) > 0:
-            ghost_idx = np.random.choice(len(top_cells))
-            self.ghost_pos = tuple(top_cells[ghost_idx])
+            bottom_cells = empty_cells[empty_cells[:, 0] > self.height * 0.6]
+            if len(bottom_cells) > 0:
+                pacman_idx = np.random.choice(len(bottom_cells))
+                self.pacman_pos = tuple(bottom_cells[pacman_idx])
+            else:
+                self.pacman_pos = tuple(empty_cells[0])
+
+        if self.deterministic_starts and self.default_ghost_start is not None:
+            self.ghost_pos = tuple(int(v) for v in self.default_ghost_start)
         else:
-            self.ghost_pos = tuple(empty_cells[-1])
+            top_cells = empty_cells[empty_cells[:, 0] < self.height * 0.4]
+            if len(top_cells) > 0:
+                ghost_idx = np.random.choice(len(top_cells))
+                self.ghost_pos = tuple(top_cells[ghost_idx])
+            else:
+                self.ghost_pos = tuple(empty_cells[-1])
         
         return self.get_state()
     
@@ -163,6 +192,18 @@ class Environment:
         if self.is_valid_position(new_pos):
             return new_pos
         return current_pos
+
+    def _apply_pacman_move(self, current_pos: Tuple[int, int], move: Move, steps: int) -> Tuple[int, int]:
+        if move == Move.STAY:
+            return current_pos
+
+        new_pos = current_pos
+        for _ in range(steps):
+            candidate = self.apply_move(new_pos, move)
+            if candidate == new_pos:
+                break
+            new_pos = candidate
+        return new_pos
     
     def step(self, pacman_move: Move, ghost_move: Move) -> Tuple[bool, str, Tuple[np.ndarray, Tuple[int, int], Tuple[int, int]]]:
         """
@@ -181,7 +222,8 @@ class Environment:
         self.current_step += 1
         
         # Apply moves
-        new_pacman_pos = self.apply_move(self.pacman_pos, pacman_move)
+        pacman_move, requested_steps = self._normalize_pacman_action(pacman_move)
+        new_pacman_pos = self._apply_pacman_move(self.pacman_pos, pacman_move, requested_steps)
         new_ghost_pos = self.apply_move(self.ghost_pos, ghost_move)
         
         # Update positions
@@ -189,10 +231,8 @@ class Environment:
         self.ghost_pos = new_ghost_pos
         
         # Check win conditions
-        # Pacman catches Ghost
-        if self.pacman_pos == self.ghost_pos:
-            return True, 'pacman_wins', self.get_state()
-        elif self.get_distance(self.pacman_pos, self.ghost_pos) <= 1:
+        distance = self.get_distance(self.pacman_pos, self.ghost_pos)
+        if distance < self.capture_distance_threshold:
             return True, 'pacman_wins', self.get_state()
         
         # Ghost wins if Pacman fails to catch within the allotted steps
@@ -237,3 +277,25 @@ class Environment:
         
         rows = [''.join(row) for row in display]
         return '\n'.join(rows)
+
+    def _normalize_pacman_action(self, action) -> Tuple[Move, int]:
+        if isinstance(action, Move):
+            move = action
+            steps = 1
+        elif isinstance(action, tuple) and len(action) == 2:
+            move, steps = action
+        else:
+            raise ValueError("Pacman action must be Move or (Move, steps) tuple")
+
+        if not isinstance(move, Move):
+            raise ValueError("Pacman action must include a Move enum")
+
+        try:
+            steps = int(steps)
+        except (TypeError, ValueError):
+            steps = 1
+
+        if steps < 1:
+            steps = 1
+        steps = min(steps, self.pacman_speed)
+        return move, steps

@@ -20,9 +20,9 @@ SRC_DIR="$SCRIPT_DIR/src"
 if command -v conda >/dev/null 2>&1; then
 	PYTHON_CMD=(conda run -n ml python)
 else
-	PYTHON_CMD=(python)
+	PYTHON_CMD=(python3)
 fi
 
 cd "$SRC_DIR"
 
-"${PYTHON_CMD[@]}" arena.py --seek "$SEEKER" --hide "$HIDER" "$@"
+"${PYTHON_CMD[@]}" arena.py --seek "$SEEKER" --hide "$HIDER" --no-viz "$@" 
