@@ -25,4 +25,4 @@ fi
 
 cd "$SRC_DIR"
 
-"${PYTHON_CMD[@]}" arena.py --seek "$SEEKER" --hide "$HIDER" --no-viz "$@" 
+"${PYTHON_CMD[@]}" arena.py --seek "$SEEKER" --hide "$HIDER" --no-viz --capture-distance 2 "$@" 
