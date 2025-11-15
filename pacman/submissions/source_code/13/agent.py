@@ -23,7 +23,6 @@ class PacmanAgent(BasePacmanAgent):
         self.last_distance = None
         self.last_stall_step = None
         self.last_enemy_dir = (0, 0)
-        self.pacman_speed = kwargs.get('pacman_speed', 1)
 
         # Critical parameters
         self.critical_distance = 5      # <= this -> critical chasing
@@ -40,7 +39,7 @@ class PacmanAgent(BasePacmanAgent):
         # small cache for LOS per step to avoid repeated Bresenham calls
         self._los_cache = {"step": None, "value": None, "key": None}
 
-    #Utility: is_wall
+    # ------------------ Utility: is_wall ------------------
     def _is_wall(self, pos, map_state):
         """
         Robust wall check: supports map_state with 0/1 or '.'/'#' or numpy arrays.
@@ -67,7 +66,7 @@ class PacmanAgent(BasePacmanAgent):
             pass
         return False
 
-    # LOS: Bresenham with cache
+    # ------------------ LOS: Bresenham with cache ------------------
     def has_line_of_sight(self, a_pos, b_pos, map_state, step_number=None):
         """
         Bresenham line between a_pos and b_pos (tile coords). Returns True if no wall in between.
@@ -112,7 +111,7 @@ class PacmanAgent(BasePacmanAgent):
 
         return visible
 
-    # DFS limited (keeps original heuristic)
+    # ------------------ DFS limited (keeps original heuristic) ------------------
     def dfs_limited(self, start, goal, map_state, max_depth=10, prefer_dir=None):
         """
         Original DFS-limited with optional prefer_dir (dx,dy) to bias neighbor ordering.
@@ -155,7 +154,7 @@ class PacmanAgent(BasePacmanAgent):
 
         return best_path if best_path else [Move.STAY]
 
-    # A* (tile-level)
+    # ------------------ A* (tile-level) ------------------
     def astar_path(self, start, goal, map_state):
         """
         Tile-level A* returning list of Move enums. start/goal are (row,col).
@@ -183,7 +182,7 @@ class PacmanAgent(BasePacmanAgent):
 
         return [Move.STAY]
 
-    # Junction graph builder
+    # ------------------ Junction graph builder ------------------
     def _build_junction_graph_if_needed(self, map_state):
         """
         Build junction nodes and corridor edges if not built yet.
@@ -262,7 +261,7 @@ class PacmanAgent(BasePacmanAgent):
         self._node_edges = edges
         self._tile_to_node = tile_to_node
 
-    # Walk from tile along direction until next junction node
+    # ------------------ Walk from tile along direction until next junction node ------------------
     def _walk_to_next_node(self, start_tile, direction, map_state):
         """
         Walk from start_tile in integer direction (dr,dc) until hitting a node in junction graph or wall.
@@ -286,7 +285,7 @@ class PacmanAgent(BasePacmanAgent):
                 return (cr, cc)
         # unreachable
 
-    # Node-level dijkstra
+    # ------------------ Node-level dijkstra ------------------
     def _dijkstra_nodes(self, start_node, goal_node):
         """
         Dijkstra on node graph, returns list of nodes from start_node to goal_node inclusive.
@@ -313,7 +312,7 @@ class PacmanAgent(BasePacmanAgent):
                     heapq.heappush(pq, (ncost, nbr, path + [nbr]))
         return None
 
-    # Convert node path to tile-level Move list
+    # ------------------ Convert node path to tile-level Move list ------------------
     def _nodes_to_tile_moves(self, start_tile, node_path, map_state):
         """
         Convert node_path (list of nodes) into sequence of Move enums from start_tile to reach node_path[-1].
@@ -366,7 +365,6 @@ class PacmanAgent(BasePacmanAgent):
             else:
                 # corridor is list of tiles from a's adjacent to endpoint b inclusive
                 cur = a
-                
                 for tile in corridor:
                     dr = tile[0] - cur[0]
                     dc = tile[1] - cur[1]
@@ -382,49 +380,9 @@ class PacmanAgent(BasePacmanAgent):
                     else:
                         moves.append(mv)
                         cur = tile
-                # cur = a
-                # remaining_tiles = list(corridor)
-                
-                # while remaining_tiles:
-                #     first_tile = remaining_tiles[0]
-                #     dr = first_tile[0] - cur[0]
-                #     dc = first_tile[1] - cur[1]
-                #     mv_enum = delta_to_move.get((dr, dc))
-                    
-                #     if mv_enum is None:
-                #         moves_between = self.astar_path(cur, remaining_tiles[-1], map_state)
-                #         if moves_between and moves_between != [Move.STAY]:
-                #             moves.extend(moves_between)
-                #         break
-                    
-                #     #How far agent can go
-                #     move_len = 0
-                #     for k in range(self.pacman_speed):
-                #         if not remaining_tiles:
-                #             break   # Out of tiles
-                        
-                #         tile_to_check = remaining_tiles[0]
-                #         expected_dr = (tile_to_check[0] -   cur[0])
-                #         expected_dc = (tile_to_check[1] - cur[1])
-                        
-                #         if expected_dr == dr * (k+1) and expected_dc == dc * (k+1):
-                #             move_len += 1
-                #             cur = remaining_tiles.pop(0)
-                #         else:
-                #             break
-                        
-                #     if move_len > 0:
-                #         moves.append(Move(mv_enum, move_len))
-                #     elif not remaining_tiles:
-                #         break
-                #     else:
-                #         moves_between = self.astar_path(cur, remaining_tiles[-1], map_state)
-                #         if moves_between and moves_between != [Move.STAY]:
-                #             moves.extend(moves_between)
-                #         break
         return moves
 
-    # Predict enemy tile (k steps ahead)
+    # ------------------ Predict enemy tile (k steps ahead) ------------------
     def _predict_enemy_tile(self, enemy_pos, map_state, k=2):
         """
         Predict enemy tile k steps ahead using last_enemy_dir; fallback to enemy_pos if blocked or unknown.
@@ -444,7 +402,7 @@ class PacmanAgent(BasePacmanAgent):
                 return (pr, pc)
         return enemy_pos
 
-    # Main step()
+    # ------------------ Main step() ------------------
     def step(self, map_state, my_position, enemy_position, step_number):
         """
         Main decision function:
@@ -598,28 +556,11 @@ class PacmanAgent(BasePacmanAgent):
     def _get_neighbors(self, pos: tuple, map_state: np.ndarray) -> list:
         """Get all valid neighboring positions."""
         neighbors = []
-        
-        direction_moves = {
-            (-1, 0): Move.UP,
-            (1, 0): Move.DOWN,
-            (0, -1): Move.LEFT,
-            (0, 1): Move.RIGHT
-        }
     
-        for (dr,dc), move in direction_moves.items():
-            current_pos = pos
-            
-            for k in range(1, self.pacman_speed+1):
-                new_pos = (pos[0] + dr * k, pos[1] + dc*k)
-                
-                if not self._is_valid_position(new_pos, map_state):
-                    break
-            # next_pos = self._apply_move(pos, move)
-            # if self._is_valid_position(next_pos, map_state):
-            #     neighbors.append((next_pos, move))
-            
-                final_move = Move((dr*k, dc*k))
-                neighbors.append((new_pos, final_move))
+        for move in [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]:
+            next_pos = self._apply_move(pos, move)
+            if self._is_valid_position(next_pos, map_state):
+                neighbors.append((next_pos, move))
     
         return neighbors
 

@@ -227,6 +227,21 @@ class GhostAgent(BaseGhostAgent):
         final_pos = self._evaluate_position(ghost_pos, pacman_pos, map_state)
         return max_depth + final_pos
     
+    def _get_move_away(self, moves, current_pos, target_pos):
+        max_dist = -1.0
+        best_move = Move.STAY
+        
+        for move in moves:
+            new_pos = self._get_new_pos(current_pos, move)
+            
+            dist = self._get_mahattan_distance(new_pos, target_pos)
+            
+            if dist > max_dist:
+               max_dist = dist
+               best_move = move
+               
+        return best_move 
+    
     def _get_move_towards(self, moves, current_pos, target_pos):
         min_dist = float('inf')
         best_move = Move.STAY
