@@ -352,8 +352,11 @@ class GhostAgent(BaseGhostAgent):
 
             # 4. Công thức điểm MỚI (kết hợp)
             # (Khoảng cách) + (Độ an toàn của ngã rẽ) - (Tường)
-            score = (distance * 10.0) + (degree * 5.0) - (adjacent_wall_count * 2.0)
-            
+            if distance < 8:
+                score = (distance * 3.0) + (degree * 15.0) - (adjacent_wall_count * 2.0)
+            else: 
+                score = (distance * 4.0) + (degree * 6.0) - (adjacent_wall_count * 2.0)
+
             return score, None
             # === HẾT BỘ NÃO MỚI ===
         
