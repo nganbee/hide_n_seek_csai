@@ -1,8 +1,9 @@
 #!/bin/bash
 
+#{1..2} {5..7} {9..19} "21" {23..25}
 NUM_RUNS=50
-PACMAN_LIST=("23120049" "23120060")
-GHOST_LIST=("23120060" "potential_field")
+PACMAN_LIST=("23")
+GHOST_LIST=({1..2} {5..7} {9..19} "21" {23..25})
 LOG_FILE="game_results.log"
 
 echo "START GAME $NUM_RUNS"
@@ -11,7 +12,6 @@ echo "Ghost: $GHOST"
 
 for PACMAN in "${PACMAN_LIST[@]}"; do
     
-    # 5. VÒNG LẶP BÊN TRONG (GHOST)
     for GHOST in "${GHOST_LIST[@]}"; do
         
         echo "MATCH: Pacman ($PACMAN) vs Ghost ($GHOST)"
@@ -26,6 +26,7 @@ for PACMAN in "${PACMAN_LIST[@]}"; do
         echo "END MATCH: $PACMAN vs $GHOST"
 
         python3 analyze_result.py "$LOG_FILE" "$PACMAN" "$GHOST"
+        > "$LOG_FILE"
 
     done
 done
