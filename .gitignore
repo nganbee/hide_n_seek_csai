@@ -13,3 +13,5 @@ Release/
 # Python junk (if you have any Python parts)
 __pycache__/
 *.pyc
+
+submissions
