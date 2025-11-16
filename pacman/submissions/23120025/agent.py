@@ -18,224 +18,453 @@ from agent_interface import GhostAgent as BaseGhostAgent
 from environment import Move
 import numpy as np
 import random
-
+import itertools
+from heapq import heappush, heappop
 
 class PacmanAgent(BasePacmanAgent):
     """
-    Pacman dùng BFS để tìm đường ngắn nhất đến Ghost
-    có thêm phần dự đoán hướng đi của Ghost để đón đầu.
+    Pacman Agent using Minimax with heat map heuristic
     """
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.name = "BFS Pacman (Predictive)"
-        self._last_enemy_pos = None
-
-    def step(self, map_state: np.ndarray, 
-             my_position: tuple, 
-             enemy_position: tuple,
-             step_number: int) -> Move:
-        """
-        Dùng BFS để tìm đường ngắn nhất đến vị trí dự đoán của Ghost.
-        Có fallback nếu không tìm được đường.
-        """
-        # Nếu ở cạnh hoặc trùng vị trí -> đứng yên
-        if my_position == enemy_position or self._manhattan_distance(my_position, enemy_position) == 1:
-            return Move.STAY
-        
-        # Dự đoán vị trí tiếp theo của Ghost
-        predicted = self._predict_enemy(enemy_position)
-        self._last_enemy_pos = enemy_position  # Cập nhật sau khi dùng
-
-        # Ưu tiên đuổi vị trí dự đoán trước
-        first_move = self._bfs_first_move(map_state, my_position, predicted)
-        if first_move is None:
-            # Nếu không có đường đến vị trí dự đoán, thì đuổi vị trí thật
-            first_move = self._bfs_first_move(map_state, my_position, enemy_position)
-
-        if first_move is not None:
-            return first_move
-
-        # fallback: random valid move
-        all_moves = [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]
-        random.shuffle(all_moves)
-        for move in all_moves:
-            dr, dc = move.value
-            new_pos = (my_position[0] + dr, my_position[1] + dc)
-            if self._is_valid_position(new_pos, map_state):
-                return move
-
-        return Move.STAY
-
-    def _bfs_first_move(self, map_state, start, goal):
-        """
-        BFS tìm đường ngắn nhất từ start đến goal, 
-        trả về bước đầu tiên phải đi.
-        """
-        h, w = map_state.shape
-
-        def valid(pos):
-            r, c = pos
-            return 0 <= r < h and 0 <= c < w and map_state[r, c] == 0
-
-        if not valid(goal):
-            return None
-
-        q = deque([start])
-        came_from = {start: None}
-        moves = [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]
-
-        while q:
-            cur = q.popleft()
-            if cur == goal:
-                break
-            for move in moves:
-                dr, dc = move.value
-                nxt = (cur[0] + dr, cur[1] + dc)
-                if nxt not in came_from and valid(nxt):
-                    came_from[nxt] = (cur, move)
-                    q.append(nxt)
-
-        if goal not in came_from:
-            return None
-
-        # reconstruct đường đi: tìm move đầu tiên từ start → goal
-        node = goal
-        path = []
-        while came_from[node] is not None:
-            prev, move = came_from[node]
-            path.append(move)
-            node = prev
-
-        return path[-1]  # move đầu tiên (ngược từ cuối về đầu)
-
-    def _predict_enemy(self, enemy_pos):
-        """
-        Dự đoán vị trí tiếp theo của Ghost dựa theo vector vận tốc trước đó.
-        Nếu không có dữ liệu, trả về vị trí hiện tại.
-        """
-        if self._last_enemy_pos is None:
-            return enemy_pos
-        dr = enemy_pos[0] - self._last_enemy_pos[0]
-        dc = enemy_pos[1] - self._last_enemy_pos[1]
-        # Nếu Ghost không di chuyển, vẫn đuổi vị trí hiện tại
-        if dr == 0 and dc == 0:
-            return enemy_pos
-        # Dự đoán vị trí tiếp theo (1 bước theo hướng cũ)
-        pred = (enemy_pos[0] + dr, enemy_pos[1] + dc)
-        return pred
-
-    def _is_valid_position(self, pos: tuple, map_state: np.ndarray) -> bool:
-        """Check if a position is valid (not a wall and within bounds)."""
+        self.previous_positions = []
+        self.counter = itertools.count()
+    
+    # -------------------------------
+    # Utilities
+    # -------------------------------
+    def _is_valid_position(self, pos, map_state):
         row, col = pos
-        height, width = map_state.shape
-        return 0 <= row < height and 0 <= col < width and map_state[row, col] == 0
+        h, w = map_state.shape
+        return 0 <= row < h and 0 <= col < w and map_state[row, col] == 0
 
-    def _manhattan_distance(self, pos1: tuple, pos2: tuple) -> int:
-        """Calculate the Manhattan distance between two positions."""
-        return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+    def _apply_move(self, pos, move):
+        dr, dc = move.value
+        return (pos[0]+dr, pos[1]+dc)
+
+    def _get_neighbors(self, pos, map_state):
+        neighbors = []
+        for move in [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]:
+            next_pos = self._apply_move(pos, move)
+            if self._is_valid_position(next_pos, map_state):
+                neighbors.append((next_pos, move))
+        return neighbors
+
+    def _manhattan_distance(self, pos1, pos2):
+        return abs(pos1[0]-pos2[0]) + abs(pos1[1]-pos2[1])
+    
+    # -------------------------------
+    # Predictive Heat Map
+    # -------------------------------
+    def predictive_heat_map(self, map_state, ghost_pos, depth_limit=5, decay=0.8):
+        heat_map = np.zeros_like(map_state, dtype=float)
+        height, width = map_state.shape
+
+        # Compute escape routes for all cells
+        escape_routes = np.zeros_like(map_state, dtype=int)
+        for r in range(height):
+            for c in range(width):
+                if map_state[r,c]==0:
+                    escape_routes[r,c] = self.count_escape_routes((r,c), map_state, max_depth=3)
+
+        # BFS from ghost position
+        queue = deque([(ghost_pos, 0)])
+        visited = set([ghost_pos])
+        while queue:
+            pos, step = queue.popleft()
+            if step > depth_limit:
+                continue
+
+            neighbors = [n for n, _ in self._get_neighbors(pos, map_state)]
+            if not neighbors:
+                continue
+            max_escape = max([escape_routes[n] for n in neighbors])
+            best_neighbors = [n for n in neighbors if escape_routes[n] == max_escape]
+
+            for n in best_neighbors:
+                heat_map[n] += decay ** step
+                if n not in visited:
+                    visited.add(n)
+                    queue.append((n, step+1))
+        return heat_map
+
+    def count_escape_routes(self, pos, map_state, max_depth=3):
+        visited = set([pos])
+        queue = deque([(pos, 0)])
+        count = 0
+        while queue:
+            current, depth = queue.popleft()
+            if depth >= max_depth:
+                continue
+            for n, _ in self._get_neighbors(current, map_state):
+                count += 1
+                if n not in visited:
+                    visited.add(n)
+                    queue.append((n, depth+1))
+        return count
+
+    # -------------------------------
+    # Minimax with heat map heuristic
+    # -------------------------------
+    def minimax(self, map_state, pacman_pos, ghost_pos, depth, is_pacman_turn,
+                alpha=-float('inf'), beta=float('inf')):
+        
+        # Leaf node heuristic: use predictive heat map
+        if depth == 0 or pacman_pos == ghost_pos:
+            heat_map = self.predictive_heat_map(map_state, ghost_pos, depth_limit=3)
+            score = heat_map[pacman_pos] - self._manhattan_distance(pacman_pos, ghost_pos)
+            return score, None
+
+        if is_pacman_turn:
+            max_eval = -float('inf')
+            best_move = Move.STAY
+            for next_pos, move in self._get_neighbors(pacman_pos, map_state):
+                eval_score, _ = self.minimax(map_state, next_pos, ghost_pos,
+                                             depth-1, False, alpha, beta)
+                if eval_score > max_eval:
+                    max_eval = eval_score
+                    best_move = move
+                alpha = max(alpha, eval_score)
+                if beta <= alpha:
+                    break
+            return max_eval, best_move
+        else:
+            min_eval = float('inf')
+            best_move = Move.STAY
+            for next_pos, move in self._get_neighbors(ghost_pos, map_state):
+                eval_score, _ = self.minimax(map_state, pacman_pos, next_pos,
+                                             depth-1, True, alpha, beta)
+                if eval_score < min_eval:
+                    min_eval = eval_score
+                    best_move = move
+                beta = min(beta, eval_score)
+                if beta <= alpha:
+                    break
+            return min_eval, best_move
+
+    # -------------------------------
+    # Main step
+    # -------------------------------
+    def step(self, map_state, my_position, enemy_position, step_number):
+        self.previous_positions.append(my_position)
+        if len(self.previous_positions) > 10:
+            self.previous_positions.pop(0)
+
+        distance = self._manhattan_distance(my_position, enemy_position)
+        # Far away: use A* (optional)
+        if distance > 6:
+            path = self.astar(my_position, enemy_position, map_state)
+            if path and path[0] != Move.STAY:
+                next_pos = self._apply_move(my_position, path[0])
+                if self.previous_positions.count(next_pos) < 3:
+                    return path[0]
+
+        # Close: use Minimax with heat map heuristic
+        _, best_move = self.minimax(map_state, my_position, enemy_position,
+                                    depth=3, is_pacman_turn=True)
+        return best_move if best_move else Move.STAY
+
+    # -------------------------------
+    # Optional: A* as fallback
+    # -------------------------------
+    def astar(self, start, goal, map_state):
+        def heuristic(pos):
+            return self._manhattan_distance(pos, goal)
+        frontier = [(0, next(self.counter), start, [])]
+        visited = set()
+        while frontier:
+            f, _, current, path = heappop(frontier)
+            if current == goal:
+                return path
+            if current in visited:
+                continue
+            visited.add(current)
+            for next_pos, move in self._get_neighbors(current, map_state):
+                if next_pos not in visited:
+                    new_path = path + [move]
+                    heappush(frontier, (len(new_path) + heuristic(next_pos), next(self.counter), next_pos, new_path))
+        return [Move.STAY]
+
+
+from collections import deque # Vẫn cần cho Minimax (nếu bạn muốn tối ưu)
 
 
 class GhostAgent(BaseGhostAgent):
     """
-    Example Ghost agent using a simple evasive strategy.
-    Students should implement their own search algorithms here.
+    Ghost Agent v3.7 (Final) - 100% Minimax "Thuần túy"
+    
+    CHIẾN LƯỢC:
+    - Vứt bỏ hoàn toàn logic Hybrid (if xa/gần). Đây là lỗ hổng
+      bị Pacman "Interceptor" lợi dụng để "lùa" (herd).
+    - Chiến lược duy nhất: 100% MINIMAX mọi lúc.
+    
+    "BỘ NÃO" (HEURISTIC):
+    - Dùng heuristic "thuần túy" của bản vSimple gốc:
+      Mục tiêu duy nhất là "TỐI ĐA HÓA KHOẢNG CÁCH".
+    - Minimax "nhìn" 6-8 bước sẽ tự động "thấy" ngõ cụt
+      là nước đi "thua" (vì distance sẽ về 0).
+      
+    "BIẾT LUẬT":
+    - Minimax đã được nâng cấp để hiểu:
+        1. self.pacman_speed
+        2. self.max_steps (để "câu giờ")
+        3. self.capture_threshold
     """
-    
+
     def __init__(self, **kwargs):
-        """
-        Initialize the Ghost agent.
-        Students can set up any data structures they need here.
-        """
         super().__init__(**kwargs)
-        self.name = "BFS Escape Ghost"
+        self.name = "Smart Ghost v3.7 (Pure Minimax)"
+
+        # === ‼️ CÀI ĐẶT LUẬT CHƠI (BẮT BUỘC PHẢI KHỚP VỚI ARENA.PY) ===
+        # NẾU BẠN THUA, 90% LÀ DO SAI SÓT Ở ĐÂY.
+        
+        self.pacman_speed = 1      # Sửa thành 2 nếu Pacman chạy 2 bước
+        self.max_steps = 200       # Sửa nếu bạn chạy --max-steps
+        self.capture_threshold = 2 # Sửa thành 2 nếu Pacman bắt ở dist < 2
+        
+        # ==========================================================
+
+        # === Hằng số chiến lược ===
+        # Vì ta dùng mọi lúc, hãy dùng depth cao nhất có thể
+        # mà không bị timeout (1.0s)
+        self.MINIMAX_DEPTH = 8  # Thử 6, nếu chậm thì 4, nếu nhanh thì 8
+        # === THÊM VÀO ĐÂY (4 DÒNG) ===
+        self._map_height = 0
+        self._map_width = 0
+        self._junction_nodes = None    # Set các ngã rẽ
+        self._junction_degrees = {}  # "Bộ não" học map (lưu độ an toàn)
+    # ===================================================================
+    # ========== CÁC HÀM CƠ BẢN (Giữ nguyên) ==========
+    # ===================================================================
     
-    def step(self, map_state: np.ndarray, 
-             my_position: tuple, 
-             enemy_position: tuple,
-             step_number: int) -> Move:
-        """
-        Using BFS to find furthest point
-        """
-        if my_position == enemy_position:
-            return Move.STAY
-
-        target = self._find_farthest_point(map_state, my_position, enemy_position)
-        if target is None:
-            return Move.STAY
-
-        first_move = self._bfs_first_move(map_state, my_position, target)
-        if first_move is not None:
-            return first_move
-
-        return Move.STAY
-    
-    def _find_farthest_point(self, map_state, start, pacman_pos):
-        h, w = map_state.shape
-
-        def valid(pos):
-            r, c = pos
-            return 0 <= r < h and 0 <= c < w and map_state[r, c] == 0
-
-        q = deque([pacman_pos])
-        dist = {pacman_pos: 0}
-
-        while q:
-            cur = q.popleft()
-            for move in [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]:
-                dr, dc = move.value
-                nxt = (cur[0] + dr, cur[1] + dc)
-                if valid(nxt) and nxt not in dist:
-                    dist[nxt] = dist[cur] + 1
-                    q.append(nxt)
-
-        farthest = None
-        max_dist = -1
-        for pos, d in dist.items():
-            if valid(pos) and d > max_dist:
-                max_dist = d
-                farthest = pos
-        return farthest
-
-    def _bfs_first_move(self, map_state, start, goal):
-        h, w = map_state.shape
-
-        def valid(pos):
-            r, c = pos
-            return 0 <= r < h and 0 <= c < w and map_state[r, c] == 0
-
-        q = deque([start])
-        came_from = {start: None}
-        moves = [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]
-
-        while q:
-            cur = q.popleft()
-            if cur == goal:
-                break
-            for move in moves:
-                dr, dc = move.value
-                nxt = (cur[0] + dr, cur[1] + dc)
-                if nxt not in came_from and valid(nxt):
-                    came_from[nxt] = (cur, move)
-                    q.append(nxt)
-
-        if goal not in came_from:
-            return None
-
-        node = goal
-        last_move = None
-        while came_from[node] is not None:
-            prev, move = came_from[node]
-            last_move = move
-            node = prev
-        return last_move
-    
-    def _is_valid_position(self, pos: tuple, map_state: np.ndarray) -> bool:
-        """Check if a position is valid (not a wall and within bounds)."""
+    def _is_valid_position(self, pos, map_state):
         row, col = pos
         height, width = map_state.shape
-        
+
         if row < 0 or row >= height or col < 0 or col >= width:
             return False
         
         return map_state[row, col] == 0
+    
+    def _apply_move(self, pos, move):
+        delta_row, delta_col = move.value
+        return (pos[0] + delta_row, pos[1] + delta_col)
+    
+    def _get_neighbors(self, pos, map_state):
+        """Lấy 4 ô xung quanh (cho Ghost)."""
+        neighbors = []
+        for move in [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]:
+            next_pos = self._apply_move(pos, move)
+            if self._is_valid_position(next_pos, map_state):
+                neighbors.append((next_pos, move))
+        return neighbors
+    
+    def _manhattan_distance(self, pos1, pos2):
+        return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
+
+    # === THÊM VÀO ĐÂY (HÀM SỐ 1) ===
+    def _build_junction_graph(self, map_state):
+        """
+        "Học map": Tìm tất cả ngã rẽ VÀ lưu "độ an toàn" (degree)
+        của chúng.
+        """
+        h, w = map_state.shape
+        self._map_height, self._map_width = h, w # Cần lưu lại
+        
+        junctions = set()
+        degrees = {}
+        for r in range(h):
+            for c in range(w):
+                pos = (r, c)
+                # Dùng hàm _is_valid_position (đã có)
+                if self._is_valid_position(pos, map_state): 
+                    # Dùng _get_neighbors (đã có) để tính degree
+                    degree = len(self._get_neighbors(pos, map_state))
+                    
+                    # Ngã rẽ = không phải đường thẳng (degree != 2)
+                    if degree != 2:
+                        junctions.add(pos)
+                        degrees[pos] = degree
+                    
+        self._junction_nodes = junctions
+        self._junction_degrees = degrees # Đã "học" độ an toàn
+
+    # === THÊM VÀO ĐÂY (HÀM SỐ 2) ===
+    def _count_adjacent_walls(self, pos: tuple, map_state: np.ndarray) -> int:
+            """
+            Đếm số tường xung quanh (phiên bản ĐÃ SỬA LỖI).
+            """
+            wall_count = 0
+            
+            # Dùng _get_neighbors để lấy các ô hợp lệ xung quanh
+            # và _is_wall để kiểm tra các ô không hợp lệ
+            
+            for move_dir in [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]:
+                neighbor_pos = self._apply_move(pos, move_dir)
+                
+                # Nếu ô bên cạnh là tường (hoặc ngoài map)
+                if self._is_wall(neighbor_pos, map_state):
+                    wall_count += 1
+                    
+            return wall_count
+    def _is_wall(self, pos: tuple, map_state: np.ndarray) -> bool:
+            r, c = pos
+            # Giả định _map_height và _map_width đã được set
+            if not (0 <= r < self._map_height and 0 <= c < self._map_width):
+                return True  # Ngoài bản đồ là tường
+            return map_state[r, c] != 0
+    # ===================================================================
+    # ========== BỘ NÃO CHÍNH: 100% MINIMAX (ĐÃ BIẾT LUẬT) ==========
+    # ===================================================================
+    
+    def minimax(self, map_state, pacman_pos, ghost_pos, depth, is_ghost_turn, 
+                step_number, alpha=-float('inf'), beta=float('inf')):
+        """
+        Minimax "thuần túy" (chỉ quan tâm distance) nhưng "BIẾT LUẬT".
+        """
+        
+        # === ĐIỀU KIỆN DỪNG (ĐÃ BIẾT LUẬT) ===
+        distance = self._manhattan_distance(pacman_pos, ghost_pos)
+
+        # 1. Bị bắt? (Dùng luật capture_threshold)
+        if distance < self.capture_threshold:
+            return -float('inf'), None  # Thua (rất tệ)
+
+        # 2. Hết giờ? (Dùng luật max_steps)
+        estimated_current_game_turn = step_number + (self.MINIMAX_DEPTH - depth) // 2
+        if estimated_current_game_turn >= self.max_steps:
+            return float('inf'), None  # Thắng (rất tốt)
+
+        # 3. Hết độ sâu tìm kiếm? Đánh giá bằng Heuristic "Học Map"
+        if depth == 0:
+            # === BỘ NÃO MỚI ===
+            
+            # 1. "Học map": Vị trí này an toàn hay là bẫy?
+            # 2 = hành lang bình thường (mặc định).
+            degree = self._junction_degrees.get(ghost_pos, 2)
+            
+            # 2. LUẬT MỚI: CỰC KỲ GHÉT NGÕ CỤT (Bẫy của Pacman)
+            if degree <= 1:
+                return -100000.0, None # (Rất tệ! Gần như thua)
+                
+            # 3. Heuristic cũ (vẫn hữu ích)
+            adjacent_wall_count = self._count_adjacent_walls(ghost_pos, map_state)
+
+            # 4. Công thức điểm MỚI (kết hợp)
+            # (Khoảng cách) + (Độ an toàn của ngã rẽ) - (Tường)
+            if distance < 8:
+                score = (distance * 3.0) + (degree * 15.0) - (adjacent_wall_count * 2.0)
+            else: 
+                score = (distance * 4.0) + (degree * 6.0) - (adjacent_wall_count * 2.0)
+
+            return score, None
+            # === HẾT BỘ NÃO MỚI ===
+        
+        # === LƯỢT CỦA GHOST (MAX) ===
+        if is_ghost_turn:
+            max_eval = -float('inf')
+            best_move = Move.STAY
+            
+            # Tối ưu: Sắp xếp nước đi, ưu tiên nước đi "có vẻ"
+            # xa Pacman nhất (Greedy)
+            moves = self._get_neighbors(ghost_pos, map_state)
+            moves.sort(key=lambda m: self._manhattan_distance(m[0], pacman_pos), reverse=True)
+
+            for next_pos, move in moves:
+                eval_score, _ = self.minimax(
+                    map_state, pacman_pos, next_pos,
+                    depth - 1, False, step_number + 1, alpha, beta
+                )
+                
+                if eval_score > max_eval:
+                    max_eval = eval_score
+                    best_move = move
+                
+                alpha = max(alpha, eval_score)
+                if beta <= alpha:
+                    break
+            
+            return max_eval, best_move
+        
+        # === LƯỢT CỦA PACMAN (MIN) (Đã biết pacman_speed) ===
+        else:
+            min_eval = float('inf')
+            
+            # Tối ưu: Sắp xếp nước đi, ưu tiên nước "có vẻ"
+            # gần Ghost nhất (Greedy)
+            moves = self._get_pacman_simulated_moves(pacman_pos, map_state)
+            moves.sort(key=lambda m: self._manhattan_distance(m[0], ghost_pos))
+
+            for next_pos, _ in moves:
+                eval_score, _ = self.minimax(
+                    map_state, next_pos, ghost_pos,
+                    depth - 1, True, step_number + 1, alpha, beta
+                )
+                
+                if eval_score < min_eval:
+                    min_eval = eval_score
+                
+                beta = min(beta, eval_score)
+                if beta <= alpha:
+                    break
+            
+            if min_eval == float('inf'): # Fallback nếu Pacman bị kẹt
+                 eval_score, _ = self.minimax(
+                    map_state, pacman_pos, ghost_pos,
+                    depth - 1, True, step_number + 1, alpha, beta
+                )
+                 min_eval = eval_score
+
+            return min_eval, None
+
+    # ===================================================================
+    # ========== CÁC HÀM HỖ TRỢ CHO MINIMAX (BIẾT LUẬT) ==========
+    # ===================================================================
+
+    def _get_pacman_simulated_moves(self, pacman_pos, map_state):
+        """Mô phỏng các nước đi của Pacman (với pacman_speed)."""
+        possible_moves = []
+        for initial_move_dir in [Move.UP, Move.DOWN, Move.LEFT, Move.RIGHT]:
+            final_pos = self._simulate_single_pacman_dash(
+                pacman_pos, initial_move_dir, map_state, self.pacman_speed
+            )
+            if final_pos != pacman_pos:
+                possible_moves.append((final_pos, initial_move_dir))
+        
+        if not possible_moves:
+            possible_moves.append((pacman_pos, Move.STAY))
+        return possible_moves
+
+    def _simulate_single_pacman_dash(self, start_pos, move_direction, map_state, speed):
+        """Mô phỏng cú "lướt" N bước của Pacman."""
+        current_pos = start_pos
+        dr, dc = move_direction.value
+        for _ in range(speed):
+            next_pos = (current_pos[0] + dr, current_pos[1] + dc)
+            if not self._is_valid_position(next_pos, map_state):
+                break 
+            current_pos = next_pos
+            # (Giữ đơn giản: Pacman có thể lướt qua ngã rẽ)
+            # (Nếu muốn nó dừng ở ngã rẽ, thêm_check_junction ở đây)
+        return current_pos
+
+    # ===================================================================
+    # ========== MAIN DECISION (100% MINIMAX) ==========
+    # ===================================================================
+    
+    def step(self, map_state, my_position, enemy_position, step_number):
+        """
+        Chiến lược "Tối thượng" v3.7:
+        - Không có "if xa/gần".
+        - Chỉ dùng 100% Minimax "Biết Luật".
+        """
+        # "Học map" 1 lần duy nhất khi game bắt đầu
+        if self._junction_nodes is None:
+            self._build_junction_graph(map_state)       
+        _, best_move = self.minimax(
+            map_state, enemy_position, my_position,
+            depth=self.MINIMAX_DEPTH, 
+            is_ghost_turn=True,
+            step_number=step_number 
+        )
+        return best_move if best_move else Move.STAY
