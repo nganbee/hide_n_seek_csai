@@ -2,8 +2,8 @@
 
 #{1..2} {5..7} {9..19} "21" {23..25}
 NUM_RUNS=50
-PACMAN_LIST=("23")
-GHOST_LIST=({1..2} {5..7} {9..19} "21" {23..25})
+PACMAN_LIST=("23120049")
+GHOST_LIST=("25")
 LOG_FILE="game_results.log"
 
 echo "START GAME $NUM_RUNS"
