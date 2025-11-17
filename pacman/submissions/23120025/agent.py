@@ -190,51 +190,21 @@ from collections import deque # Vẫn cần cho Minimax (nếu bạn muốn tố
 
 
 class GhostAgent(BaseGhostAgent):
-    """
-    Ghost Agent v3.7 (Final) - 100% Minimax "Thuần túy"
-    
-    CHIẾN LƯỢC:
-    - Vứt bỏ hoàn toàn logic Hybrid (if xa/gần). Đây là lỗ hổng
-      bị Pacman "Interceptor" lợi dụng để "lùa" (herd).
-    - Chiến lược duy nhất: 100% MINIMAX mọi lúc.
-    
-    "BỘ NÃO" (HEURISTIC):
-    - Dùng heuristic "thuần túy" của bản vSimple gốc:
-      Mục tiêu duy nhất là "TỐI ĐA HÓA KHOẢNG CÁCH".
-    - Minimax "nhìn" 6-8 bước sẽ tự động "thấy" ngõ cụt
-      là nước đi "thua" (vì distance sẽ về 0).
-      
-    "BIẾT LUẬT":
-    - Minimax đã được nâng cấp để hiểu:
-        1. self.pacman_speed
-        2. self.max_steps (để "câu giờ")
-        3. self.capture_threshold
-    """
-
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.name = "Smart Ghost v3.7 (Pure Minimax)"
+        self.name = "Minimax + Heristic Ghost"
 
-        # === ‼️ CÀI ĐẶT LUẬT CHƠI (BẮT BUỘC PHẢI KHỚP VỚI ARENA.PY) ===
-        # NẾU BẠN THUA, 90% LÀ DO SAI SÓT Ở ĐÂY.
+        self.pacman_speed = 1     
+        self.max_steps = 200      
+        self.capture_threshold = 2
         
-        self.pacman_speed = 1      # Sửa thành 2 nếu Pacman chạy 2 bước
-        self.max_steps = 200       # Sửa nếu bạn chạy --max-steps
-        self.capture_threshold = 2 # Sửa thành 2 nếu Pacman bắt ở dist < 2
-        
-        # ==========================================================
-
-        # === Hằng số chiến lược ===
-        # Vì ta dùng mọi lúc, hãy dùng depth cao nhất có thể
-        # mà không bị timeout (1.0s)
-        self.MINIMAX_DEPTH = 8  # Thử 6, nếu chậm thì 4, nếu nhanh thì 8
-        # === THÊM VÀO ĐÂY (4 DÒNG) ===
+        self.MINIMAX_DEPTH = 8  
         self._map_height = 0
         self._map_width = 0
         self._junction_nodes = None    # Set các ngã rẽ
-        self._junction_degrees = {}  # "Bộ não" học map (lưu độ an toàn)
+        self._junction_degrees = {}  
     # ===================================================================
-    # ========== CÁC HÀM CƠ BẢN (Giữ nguyên) ==========
+    # ========== CÁC HÀM CƠ BẢN ==========
     # ===================================================================
     
     def _is_valid_position(self, pos, map_state):
@@ -262,14 +232,13 @@ class GhostAgent(BaseGhostAgent):
     def _manhattan_distance(self, pos1, pos2):
         return abs(pos1[0] - pos2[0]) + abs(pos1[1] - pos2[1])
 
-    # === THÊM VÀO ĐÂY (HÀM SỐ 1) ===
     def _build_junction_graph(self, map_state):
         """
         "Học map": Tìm tất cả ngã rẽ VÀ lưu "độ an toàn" (degree)
         của chúng.
         """
         h, w = map_state.shape
-        self._map_height, self._map_width = h, w # Cần lưu lại
+        self._map_height, self._map_width = h, w 
         
         junctions = set()
         degrees = {}
@@ -289,10 +258,9 @@ class GhostAgent(BaseGhostAgent):
         self._junction_nodes = junctions
         self._junction_degrees = degrees # Đã "học" độ an toàn
 
-    # === THÊM VÀO ĐÂY (HÀM SỐ 2) ===
     def _count_adjacent_walls(self, pos: tuple, map_state: np.ndarray) -> int:
             """
-            Đếm số tường xung quanh (phiên bản ĐÃ SỬA LỖI).
+            Đếm số tường xung quanh
             """
             wall_count = 0
             
@@ -314,51 +282,40 @@ class GhostAgent(BaseGhostAgent):
                 return True  # Ngoài bản đồ là tường
             return map_state[r, c] != 0
     # ===================================================================
-    # ========== BỘ NÃO CHÍNH: 100% MINIMAX (ĐÃ BIẾT LUẬT) ==========
+    # ========== MINIMAX ==========
     # ===================================================================
     
     def minimax(self, map_state, pacman_pos, ghost_pos, depth, is_ghost_turn, 
                 step_number, alpha=-float('inf'), beta=float('inf')):
-        """
-        Minimax "thuần túy" (chỉ quan tâm distance) nhưng "BIẾT LUẬT".
-        """
         
-        # === ĐIỀU KIỆN DỪNG (ĐÃ BIẾT LUẬT) ===
+        # === ĐIỀU KIỆN DỪNG ===
         distance = self._manhattan_distance(pacman_pos, ghost_pos)
 
-        # 1. Bị bắt? (Dùng luật capture_threshold)
+        # 1. Bị bắt (Dùng luật capture_threshold)
         if distance < self.capture_threshold:
             return -float('inf'), None  # Thua (rất tệ)
 
-        # 2. Hết giờ? (Dùng luật max_steps)
+        # 2. Hết giờ (Dùng luật max_steps)
         estimated_current_game_turn = step_number + (self.MINIMAX_DEPTH - depth) // 2
         if estimated_current_game_turn >= self.max_steps:
             return float('inf'), None  # Thắng (rất tốt)
 
-        # 3. Hết độ sâu tìm kiếm? Đánh giá bằng Heuristic "Học Map"
+        # 3. Hết độ sâu tìm kiếm: Đánh giá bằng Heuristic
         if depth == 0:
-            # === BỘ NÃO MỚI ===
             
-            # 1. "Học map": Vị trí này an toàn hay là bẫy?
-            # 2 = hành lang bình thường (mặc định).
             degree = self._junction_degrees.get(ghost_pos, 2)
             
-            # 2. LUẬT MỚI: CỰC KỲ GHÉT NGÕ CỤT (Bẫy của Pacman)
             if degree <= 1:
-                return -100000.0, None # (Rất tệ! Gần như thua)
+                return -100000.0, None 
                 
-            # 3. Heuristic cũ (vẫn hữu ích)
             adjacent_wall_count = self._count_adjacent_walls(ghost_pos, map_state)
 
-            # 4. Công thức điểm MỚI (kết hợp)
-            # (Khoảng cách) + (Độ an toàn của ngã rẽ) - (Tường)
             if distance < 8:
                 score = (distance * 3.0) + (degree * 15.0) - (adjacent_wall_count * 2.0)
             else: 
                 score = (distance * 4.0) + (degree * 6.0) - (adjacent_wall_count * 2.0)
 
             return score, None
-            # === HẾT BỘ NÃO MỚI ===
         
         # === LƯỢT CỦA GHOST (MAX) ===
         if is_ghost_turn:
@@ -386,7 +343,7 @@ class GhostAgent(BaseGhostAgent):
             
             return max_eval, best_move
         
-        # === LƯỢT CỦA PACMAN (MIN) (Đã biết pacman_speed) ===
+        # === LƯỢT CỦA PACMAN (MIN) ===
         else:
             min_eval = float('inf')
             
@@ -418,7 +375,7 @@ class GhostAgent(BaseGhostAgent):
             return min_eval, None
 
     # ===================================================================
-    # ========== CÁC HÀM HỖ TRỢ CHO MINIMAX (BIẾT LUẬT) ==========
+    # ========== CÁC HÀM HỖ TRỢ CHO MINIMAX ==========
     # ===================================================================
 
     def _get_pacman_simulated_moves(self, pacman_pos, map_state):
@@ -444,21 +401,13 @@ class GhostAgent(BaseGhostAgent):
             if not self._is_valid_position(next_pos, map_state):
                 break 
             current_pos = next_pos
-            # (Giữ đơn giản: Pacman có thể lướt qua ngã rẽ)
-            # (Nếu muốn nó dừng ở ngã rẽ, thêm_check_junction ở đây)
         return current_pos
 
     # ===================================================================
-    # ========== MAIN DECISION (100% MINIMAX) ==========
+    # ========== MAIN DECISION ==========
     # ===================================================================
     
     def step(self, map_state, my_position, enemy_position, step_number):
-        """
-        Chiến lược "Tối thượng" v3.7:
-        - Không có "if xa/gần".
-        - Chỉ dùng 100% Minimax "Biết Luật".
-        """
-        # "Học map" 1 lần duy nhất khi game bắt đầu
         if self._junction_nodes is None:
             self._build_junction_graph(map_state)       
         _, best_move = self.minimax(
